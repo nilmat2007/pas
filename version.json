@@ -1,8 +1,8 @@
 {
   "versionCode": 258,
-  "versionName": "3.9.4",
+  "versionName": "3.9.5",
   "apkUrl": "https://raw.githubusercontent.com/nilmat2007/pas/main/AiAffiliateShopee.apk",
-  "notes": "• ปรับปรุงปุ่มลอย Shopee สไตล์ใหม่\n• ปรับปรุงระบบ Accessibility ให้ทำงานเสถียร\n• ปรับปรุงระบบ AI Caption",
+  "notes": "• Pheem AI v3.9.5 ดีไซน์ใหม่ Modern Bento Minimal\n• ปุ่มลอย Shopee ทรงกลม Pheem AI Toolkit\n• ระบบแคปชั่น AI Caption และเชื่อมต่อ Cloud Sync สมบูรณ์",
   "minSupported": 258,
   "force": false
 }

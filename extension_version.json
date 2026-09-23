@@ -1,0 +1,7 @@
+{
+  "version": "1.2.7",
+  "versionCode": 10207,
+  "downloadUrl": "https://github.com/nilmat2007/pas",
+  "notes": "• รองรับระบบ AI Caption และ Video Factory\n• รองรับ Cloud Sync และ Pheem AI Bridge เชื่อมต่อมือถืออัตโนมัติ\n• เพิ่มระบบตรวจสอบและแจ้งเตือนอัปเดตอัตโนมัติ",
+  "publishedAt": "2026-09-23"
+}

@@ -1,8 +1,8 @@
 {
   "name": "PUP PAP AI",
-  "version": "1.2.8",
-  "versionCode": 10208,
-  "downloadUrl": "https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.2.8.zip",
-  "notes": "• เปลี่ยนชื่อและรีแบรนด์เป็น PUP PAP AI (ปุ๊บปั๊บ AI)\n• รองรับระบบสร้างวิดีโอ Meta AI และ Ai SALER PRO\n• เพิ่มระบบคลังวิดีโอ (Media Vault) จัดเก็บและดึงคลิปโพสต์ย้อนหลัง\n• เพิ่มระบบตั้งเวลาโพสต์ TikTok แบบกลุ่ม (Batch Schedule) พร้อมสุ่มเวลา\n• เพิ่มระบบโพสต์ซ้ำ/ลองใหม่ (Retry) สำหรับคลิปที่ไม่สำเร็จในคิว\n• ปรับปรุงธีมและหน้าต่าง Modal พื้นหลังทึบชัดเจนสวยงาม",
-  "publishedAt": "2026-10-03"
+  "version": "1.2.9",
+  "versionCode": 10209,
+  "downloadUrl": "https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.2.9.zip",
+  "notes": "• แก้ไข Cloud Sync ส่งวีดีโอเข้ามือถือสำเร็จ\n• ลบ x-upsert header ที่ทำให้ upload ไป Supabase Storage ล้มเหลว\n• ปรับปรุงความเสถียรของระบบ Cloud Sync ทั้งฝั่ง Upload และ Poll",
+  "publishedAt": "2026-10-05"
 }

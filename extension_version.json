@@ -1,8 +1,8 @@
 {
   "name": "PUP PAP AI",
-  "version": "1.2.9",
-  "versionCode": 10209,
-  "downloadUrl": "https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.2.9.zip",
-  "notes": "• แก้ไข Cloud Sync ส่งวีดีโอเข้ามือถือสำเร็จ\n• ลบ x-upsert header ที่ทำให้ upload ไป Supabase Storage ล้มเหลว\n• ปรับปรุงความเสถียรของระบบ Cloud Sync ทั้งฝั่ง Upload และ Poll",
-  "publishedAt": "2026-10-05"
+  "version": "1.3.0",
+  "versionCode": 10300,
+  "downloadUrl": "https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.3.0.zip",
+  "notes": "• ปรับปรุงระบบโพสต์ Facebook Reels ดักจับ Error สมบูรณ์ ไม่ติดค้าง loop\n• เพิ่มระบบ Pre-validation ตรวจสอบขนาดและ Header ไฟล์วิดีโอก่อนอัปโหลด\n• ปรับปรุง MIME Type อัตโนมัติ และระบบ Queue Auto-skip ข้ามคลิปที่มีปัญหาไม่ให้คิวสะดุด\n• เพิ่มระบบ Auto-Cleanup ลบคลิปที่โพสต์เสร็จแล้วออกจาก Supabase Storage ประหยัดโควต้า",
+  "publishedAt": "2026-10-09"
 }

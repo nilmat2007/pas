@@ -1,8 +1,8 @@
 {
   "name": "PUP PAP AI",
-  "version": "1.3.0",
-  "versionCode": 10300,
-  "downloadUrl": "https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.3.0.zip",
-  "notes": "• ปรับปรุงระบบโพสต์ Facebook Reels ดักจับ Error สมบูรณ์ ไม่ติดค้าง loop\n• เพิ่มระบบ Pre-validation ตรวจสอบขนาดและ Header ไฟล์วิดีโอก่อนอัปโหลด\n• ปรับปรุง MIME Type อัตโนมัติ และระบบ Queue Auto-skip ข้ามคลิปที่มีปัญหาไม่ให้คิวสะดุด\n• เพิ่มระบบ Auto-Cleanup ลบคลิปที่โพสต์เสร็จแล้วออกจาก Supabase Storage ประหยัดโควต้า",
+  "version": "1.3.1",
+  "versionCode": 10301,
+  "downloadUrl": "https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.3.1.zip",
+  "notes": "• อัปเกรดระบบโรงงานผลิต (Factory): บังคับแปลงเสียงเป็น AAC 44.1kHz Stereo อัตโนมัติ ป้องกันคลิปโดนปฏิเสธ\n• เพิ่มตัวเลือกสไตล์คอนเทนต์ 5 รูปแบบ (รีวิวป้ายยา, ไวรัลเปิดหัวแรง, แก้ปัญหาชีวิต, โปรเด็ด, โฆษณาพรีเมียม)\n• ระบบ Pre-check และ Auto-fallback สลับระหว่าง Google Flow และ Meta AI อัตโนมัติเมื่อเกิดข้อผิดพลาด\n• เพิ่มเป้าหมายส่งออกอิสระ: ส่งตรงเข้ามือถือ (Cloud Sync) ทันทีหลังผลิตเสร็จแบบ Full Auto",
   "publishedAt": "2026-10-09"
 }

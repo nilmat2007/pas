@@ -1,8 +1,8 @@
 {
   "name": "PUP PAP AI",
-  "version": "1.3.2",
-  "versionCode": 10302,
-  "downloadUrl": "https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.3.2.zip",
-  "notes": "• เพิ่มระบบ Live Local Bridge (127.0.0.1:19888) เชื่อมต่อ Antigravity AI กับ PUP PAP AI และ Google Flow Tool (Ai SALER PRO) แบบ 100%\n• ดักจับและแปลงเสียง FFmpeg ใน Google Flow Tool เป็น AAC 44.1kHz Stereo อัตโนมัติ (แก้ปัญหาเสียง Veo 3.1 24kHz Mono ที่ทำให้ Facebook Reels อัปโหลดไม่ผ่าน)\n• ดักจับไฟล์รวมฉากสุดท้าย (out.mp4) จาก FFmpeg Worker โดยตรง ไม่พลาดแม้ Blob ไม่มี MIME type\n• ตั้งค่าเริ่มต้นโมเดลภาพนิ่งเป็น 🍌 Nano Banana 2.1 และเพิ่มปุ่ม 🛠️ อัปเกรด Tool 100% ในแท็บโรงงาน",
+  "version": "1.3.3",
+  "versionCode": 10303,
+  "downloadUrl": "https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.3.3.zip",
+  "notes": "• แก้ปัญหาส่งรูปผู้ชายแต่เลือกเป็นผู้หญิง: แสดงปุ่มเลือกเพศตัวละคร/เสียงพากย์ (👩 หญิง (ค่ะ) / 👨 ชาย (ครับ)) ในทุกโหมดถ่ายทำ พร้อมระบบ AI วิเคราะห์เพศจากรูปตัวละครที่อัปโหลดให้อัตโนมัติ\n• บังคับซิงค์และกดปุ่มเพศ (ชาย (ครับ) / หญิง (ค่ะ)) ในหน้า Google Flow Tool (Ai SALER PRO) อัตโนมัติทุกครั้ง\n• เพิ่มระบบ Live Local Bridge (127.0.0.1:19888) และดักแปลงเสียง FFmpeg ใน Google Flow Tool เป็น AAC 44.1kHz Stereo อัตโนมัติ\n• ดักจับไฟล์รวมฉากสุดท้าย (out.mp4) จาก FFmpeg Worker โดยตรง และตั้งค่าเริ่มต้นโมเดลภาพนิ่งเป็น 🍌 Nano Banana 2.1",
   "publishedAt": "2026-10-17"
 }

@@ -1,8 +1,8 @@
 {
   "name": "PUP PAP AI",
-  "version": "1.3.4",
-  "versionCode": 10304,
-  "downloadUrl": "https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.3.4.zip",
-  "notes": "• ปรับลดการส่งรูปสินค้าเข้า Google Flow Tool เหลือเฉพาะ 2 รูปหลักแรก + ดาวน์โหลดแบบขนาน (Promise.all) ลดเวลาอัปโหลดรูปลงกว่า 4 เท่า\n• แก้ปัญหาส่งรูปผู้ชายแต่เลือกเป็นผู้หญิง: แสดงปุ่มเลือกเพศตัวละคร/เสียงพากย์ (👩 หญิง (ค่ะ) / 👨 ชาย (ครับ)) ในทุกโหมดถ่ายทำ พร้อม AI วิเคราะห์เพศอัตโนมัติ\n• อัปเกรด UI Layout / Margin / Padding ของ Google Flow Tool ไม่ให้จอมือถือ 9:16 ซ้อนทับป้ายด้านบนและกล่อง Log ด้านล่าง\n• ดักแปลงเสียง FFmpeg ใน Google Flow Tool เป็น AAC 44.1kHz Stereo อัตโนมัติ และตั้งค่าเริ่มต้นโมเดลภาพนิ่งเป็น 🍌 Nano Banana 2.1",
+  "version": "1.3.5",
+  "versionCode": 10305,
+  "downloadUrl": "https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.3.5.zip",
+  "notes": "• แก้ปัญหาวิดีโอจาก Google Flow Tool ไม่เข้าคลังหรือส่งต่อตามสเต็บ: อัปเกรด Video Interceptor v2 ดักจับวิดีโอรวมฉาก (Flow.download + FileReader + FFmpeg out.mp4) พร้อมระบบดึงเข้าคลังวีดีโออัตโนมัติทุก 5 วินาที และระบบ Scene Fallback ป้องกันคลิปหาย\n• ทำงานต่อสเต็ป 4 อัตโนมัติ 100% ตามเมนู 'หลังผลิตเสร็จ ให้ทำอะไร?' (ตัดป๊อปอัป confirm ขัดจังหวะออก) พร้อมส่งรหัสสินค้าสะอาดเพื่อปักตะกร้า TikTok Shop / Shopee / Reels / Cloud Sync อัตโนมัติ\n• ปรับลดการส่งรูปสินค้าเข้า Google Flow Tool เหลือเฉพาะ 2 รูปหลักแรก + ดาวน์โหลดแบบขนาน (Promise.all)\n• แสดงปุ่มเลือกเพศตัวละคร/เสียงพากย์ (👩 หญิง (ค่ะ) / 👨 ชาย (ครับ)) ในทุกโหมดถ่ายทำ พร้อม AI วิเคราะห์เพศอัตโนมัติ",
   "publishedAt": "2026-10-17"
 }

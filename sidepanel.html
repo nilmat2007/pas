@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PUP PAP AI - ปุ๊บปั๊บ AI</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <!-- ─── Header ────────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-card">
+      <img src="icons/icon128.png" alt="PUP PAP AI" class="header-brand-logo" title="PUP PAP AI (ปุ๊บปั๊บ AI)">
+      <div class="header-info">
+        <h1 class="header-title">PUP PAP AI</h1>
+        <div id="headerVersionBadge" class="header-sub" title="คลิกเพื่อตรวจเช็คอัปเดต" style="cursor:pointer; user-select:none;">v1.3.5 · คิดปุ๊บ คลิปปั๊บ 🔄</div>
+      </div>
+      <div class="header-actions">
+        <span class="badge-pro">PRO · LIFETIME</span>
+        <button id="btnThemeToggle" class="btn-theme-toggle" type="button" title="สลับธีม: ครีมกระดาษมือถือ ↔ ดำสนิท">🌓</button>
+      </div>
+    </div>
+    <div class="header-tabs">
+      <button class="tab-btn active" data-tab="post" title="TikTok"><svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.73a8.19 8.19 0 004.76 1.52v-3.4a4.85 4.85 0 01-1-.16z"/></svg><span>TikTok</span></button>
+      <button class="tab-btn" data-tab="fb-reels" title="Facebook Reels"><svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg><span>Reels</span></button>
+      <button class="tab-btn" data-tab="shopee-video" title="Shopee Video"><svg class="tab-icon" viewBox="0 0 24 24" fill="#ee4d2d"><path d="M12 2C9.24 2 7 4.24 7 7h2c0-1.66 1.34-3 3-3s3 1.34 3 3h2c0-2.76-2.24-5-5-5zM4 7c-.55 0-1 .45-1 1v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V8c0-.55-.45-1-1-1H4zm4 4a1 1 0 110-2 1 1 0 010 2zm8 0a1 1 0 110-2 1 1 0 010 2z"/></svg><span style="color:#ee4d2d; font-weight:700;">Shopee VDO</span></button>
+      <button class="tab-btn" data-tab="queue" title="คิว"><svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg><span>คิว</span></button>
+      <button class="tab-btn" data-tab="products" title="สินค้า TikTok"><svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.73a8.19 8.19 0 004.76 1.52v-3.4a4.85 4.85 0 01-1-.16z"/></svg><span>สินค้า</span></button>
+      <button class="tab-btn" data-tab="shopee" title="สินค้า Shopee"><svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C9.24 2 7 4.24 7 7h2c0-1.66 1.34-3 3-3s3 1.34 3 3h2c0-2.76-2.24-5-5-5zM4 7c-.55 0-1 .45-1 1v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V8c0-.55-.45-1-1-1H4zm4 4a1 1 0 110-2 1 1 0 010 2zm8 0a1 1 0 110-2 1 1 0 010 2z"/></svg><span>Shopee</span></button>
+      <button class="tab-btn" data-tab="factory" title="โรงงานวีดีโอ AI"><svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M18 4l2 3h-3l-2-3h-2l2 3h-3l-2-3H8l2 3H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4zm0 14H6V8h12v10z"/></svg><span>โรงงาน</span></button>
+      <button class="tab-btn" data-tab="vault" title="คลังวีดีโอ"><svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 12.5v-9l6 4.5-6 4.5z"/></svg><span>คลัง</span></button>
+      <button class="tab-btn" data-tab="settings" title="ตั้งค่า"><svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 110-7.2 3.6 3.6 0 010 7.2z"/></svg><span>ตั้งค่า</span></button>
+    </div>
+  </header>
+
+  <!-- ─── Tab: Post ─────────────────────────────────────────────── -->
+  <main class="tab-content active" id="tab-post">
+
+    <!-- Description -->
+    <p class="post-desc">อัปโหลดคลิป (.mp4) จากเครื่อง หรือเลือกจากงานที่สร้างเสร็จแล้ว — แต่ละคลิปจะถูกโพสต์เป็น 1 โพสต์.</p>
+
+    <!-- Upload Section -->
+    <section class="upload-section" id="dropZone">
+      <div id="uploadEmpty" class="upload-empty">
+        ยังไม่มีคลิป — กด "↑ อัปโหลดคลิป" เพื่อเริ่ม
+      </div>
+      <div id="videoList" class="video-list"></div>
+      <div class="upload-actions">
+        <button id="btnUploadClip" class="btn btn-outline" type="button">↑ อัปโหลดคลิป</button>
+        <button id="btnFromTasks" class="btn btn-outline-dim" type="button">+ เลือกจากงานที่สร้างเสร็จแล้ว</button>
+      </div>
+      <input type="file" id="videoInput" accept="video/*,.mp4,.mov,.avi,.mkv,.webm,.flv,.wmv,.m4v" multiple hidden>
+      <button id="clearAllVideos" class="btn-text-danger hidden" type="button">🗑️ ล้างคลิปทั้งหมด</button>
+    </section>
+
+    <!-- ─── Settings Toggles ────────────────────────────────────── -->
+    <section class="toggles-section">
+      <div class="toggle-row-v2 master">
+        <span class="toggle-text">เปิด / ปิด ทั้งหมด</span>
+        <label class="switch"><input type="checkbox" id="masterToggle" checked><span class="slider round"></span></label>
+      </div>
+      <div class="toggles-divider"></div>
+      <div class="toggle-row-v2">
+        <span class="toggle-text">ปิดปักตะกร้า</span>
+        <label class="switch"><input type="checkbox" id="toggleBasket"><span class="slider round"></span></label>
+      </div>
+      <div class="toggle-row-v2">
+        <span class="toggle-text">Skip AI-Generated</span>
+        <label class="switch"><input type="checkbox" id="toggleSkipAI"><span class="slider round"></span></label>
+      </div>
+      <div class="toggle-row-v2">
+        <span class="toggle-text">Disclose post content</span>
+        <label class="switch"><input type="checkbox" id="toggleDisclose"><span class="slider round"></span></label>
+      </div>
+      <div class="toggle-row-v2">
+        <span class="toggle-text">ใส่แฮชแท็กอัตโนมัติ</span>
+        <label class="switch"><input type="checkbox" id="toggleAutoHashtags" checked><span class="slider round"></span></label>
+      </div>
+    </section>
+
+    <!-- ─── Product Picker ──────────────────────────────────────── -->
+    <section class="product-picker-section">
+      <label class="section-label">ชื่อสินค้า <span class="label-sub">(ปักตะกร้า)</span></label>
+
+      <!-- Selected product (shown after selection) -->
+      <div id="selectedProductCard" class="selected-product-card hidden">
+        <img id="selectedProductImg" class="selected-product-img" src="">
+        <div class="selected-product-info">
+          <div id="selectedProductName" class="selected-product-name"></div>
+          <div id="selectedProductMeta" class="selected-product-meta"></div>
+          <button id="btnSyncSelectedToFlow" class="btn btn-outline btn-sm" type="button" style="font-size:10px; padding:2px 8px; margin-top:4px; border-color:#3b82f6; color:#60a5fa; border-radius:4px;" title="ซิงค์สินค้านี้ไป Ai SALER PRO (Google Flow)">⚡ ซิงค์ไป Ai SALER PRO</button>
+        </div>
+        <button id="clearSelectedProduct" class="btn-icon" title="ลบ" type="button">✕</button>
+      </div>
+
+      <!-- Picker trigger card (shown when no product selected) -->
+      <div id="productPickerCard" class="picker-trigger-card">
+        <div class="picker-trigger-icon">+</div>
+        <div class="picker-trigger-body">
+          <div class="picker-trigger-title">เลือกสินค้า</div>
+          <div class="picker-trigger-sub">แตะเพื่อปักสินค้าลงตะกร้า</div>
+        </div>
+        <span class="picker-trigger-arrow">›</span>
+      </div>
+
+      <p class="hint" id="noProductHint">ดึงสินค้าใน Product Showcase ก่อน เพื่อเลือกจากรายการ</p>
+
+      <!-- Hidden CTA (auto-generated) -->
+      <input id="basketCta" type="hidden" value="">
+    </section>
+
+    <!-- ─── Publish Mode ────────────────────────────────────────── -->
+    <section class="publish-section">
+      <label class="section-label">เลือกวิธีลงคลิป</label>
+      <div class="custom-dropdown" id="publishDropdown">
+        <button class="dropdown-trigger" id="publishTrigger" type="button">
+          <span id="publishText">โพสต์เลย (สาธารณะ)</span>
+          <svg class="dropdown-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="dropdown-menu hidden" id="publishMenu">
+          <div class="dropdown-option active" data-value="now">โพสต์เลย (สาธารณะ)</div>
+          <div class="dropdown-option" data-value="draft">บันทึกร่าง</div>
+          <div class="dropdown-option" data-value="scheduled">ตั้งเวลาโพสต์</div>
+          <div class="dropdown-option" data-value="private">โพสต์ส่วนตัว</div>
+        </div>
+      </div>
+      <div id="scheduleSettings" class="schedule-fields hidden">
+        <div class="form-row"><label>วันที่</label><input id="scheduleDate" class="input" type="date"></div>
+        <div class="form-row"><label>เวลา</label><input id="scheduleTime" class="input" type="time" step="300"></div>
+        <div class="form-row" title="ระยะเวลาห่างกันระหว่างแต่ละคลิป (หากลงคิวหลายคลิปพร้อมกัน)"><label>ห่างกัน (นาที)</label><input id="scheduleInterval" class="input" type="number" value="15" min="15"></div>
+        <div class="form-row" title="สุ่มเวลาเล็กน้อยให้ดูเป็นธรรมชาติ (ปัดเศษลงท้าย 0 หรือ 5 นาที)"><label>สุ่มเวลา</label>
+          <select id="scheduleVariation" class="input">
+            <option value="0">ไม่สุ่ม</option>
+            <option value="3">±3 นาที</option>
+            <option value="5" selected>±5 นาที</option>
+            <option value="10">±10 นาที</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Advanced (collapsed) ────────────────────────────────── -->
+    <details class="advanced-section">
+      <summary class="advanced-summary">⚙️ ตั้งค่าเพิ่มเติม (แคปชั่น / เพลง)</summary>
+      <div class="advanced-body">
+        <div class="form-group">
+          <label class="section-label-sm">แคปชั่น <span class="label-sub">(เว้นว่าง = AI สร้างให้)</span></label>
+          <textarea id="captionInput" class="input-textarea" rows="2" placeholder="ใส่แคปชั่น หรือเว้นว่างให้ AI สร้างอัตโนมัติ..."></textarea>
+          <div class="ai-buttons">
+            <button id="btnAiCaption" class="btn btn-ai btn-sm" type="button">🤖 สร้างแคปชั่น AI</button>
+            <button id="btnAiImprove" class="btn btn-ai btn-sm" type="button">✨ ปรับปรุง</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="section-label-sm">แฮชแท็ก <span class="label-sub">(เว้นว่าง = AI แนะนำ)</span></label>
+          <input id="hashtagsInput" class="input" placeholder="TikTokShop ของดีบอกต่อ ป้ายยา">
+          <button id="btnAiHashtags" class="btn btn-ai btn-sm" type="button" style="margin-top:4px;">🏷️ แนะนำ AI</button>
+        </div>
+        <div class="form-group">
+          <label class="section-label-sm">ข้อมูลสินค้าสำหรับ AI</label>
+          <input id="aiProductName" class="input" placeholder="ชื่อสินค้า">
+          <input id="aiProductPrice" class="input" placeholder="ราคา" style="margin-top:4px;">
+          <input id="aiProductCategory" class="input" placeholder="หมวดหมู่" style="margin-top:4px;">
+          <textarea id="aiProductDesc" class="input-textarea" rows="2" placeholder="คำอธิบายสินค้า" style="margin-top:4px;"></textarea>
+          <select id="aiStyle" class="input-select" style="margin-top:4px;">
+            <option value="engaging">ดึงดูดใจ</option>
+            <option value="professional">มืออาชีพ</option>
+            <option value="funny">ตลก ขำๆ</option>
+            <option value="urgent">เร่งด่วน</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <div class="toggle-row-v2 compact">
+            <span class="toggle-text">เปิดเพลง</span>
+            <label class="switch sm"><input type="checkbox" id="soundEnabled"><span class="slider round"></span></label>
+          </div>
+          <div id="soundSettings" class="sub-settings hidden">
+            <div class="form-row"><label>แท็บเพลง</label><select id="soundTab" class="input-select"><option value="foryou">สำหรับคุณ</option><option value="favorites">รายการโปรด</option><option value="unlimited">ไม่จำกัด</option></select></div>
+            <div class="form-row"><label>ลำดับเพลง</label><input id="soundIndex" class="input input-sm" type="number" min="1" max="10" value="1"></div>
+            <div class="form-row"><label>เสียงคลิป (%)</label><input id="originalVolume" class="input input-sm" type="number" min="0" max="100" value="50"></div>
+            <div class="form-row"><label>เสียงเพลง (%)</label><input id="addedVolume" class="input input-sm" type="number" min="0" max="100" value="50"></div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- ─── Action Buttons ──────────────────────────────────────── -->
+    <section class="action-buttons">
+      <button id="btnBatchQueue" class="btn btn-primary btn-lg" type="button">📋 ลงคิวทั้งหมด <span id="batchQueueCount"></span></button>
+      <button id="btnPostNow" class="btn btn-secondary btn-lg" type="button">▶ โพสต์เลย (ตัวแรก)</button>
+    </section>
+
+    <!-- Progress -->
+    <section id="progressSection" class="card hidden">
+      <h3 class="card-title">📊 สถานะ</h3>
+      <div id="progressLog" class="progress-log"></div>
+    </section>
+  </main>
+
+  <!-- ─── Tab: FB Reels ──────────────────────────────────────────── -->
+  <main class="tab-content" id="tab-fb-reels">
+
+    <!-- Video Upload -->
+    <section class="card">
+      <h3 class="card-title">📹 คลิปวิดีโอ</h3>
+      <p style="font-size:12px; color:#aaa; margin:0 0 8px;">เลือกคลิป (.mp4) สำหรับโพสต์เป็น Facebook Reels</p>
+      <div class="upload-zone" id="fbReelsUploadZone">
+        <input type="file" id="fbReelsFileInput" accept="video/mp4,video/*" multiple hidden>
+        <p class="upload-text">📂 คลิกเลือกคลิป หรือลากวางที่นี่</p>
+      </div>
+      <div id="fbReelsFileList" class="file-list" style="margin-top:8px;"></div>
+    </section>
+
+    <!-- Caption & Hashtags -->
+    <section class="card">
+      <h3 class="card-title">✍️ แคปชั่น & แฮชแท็ก</h3>
+      <textarea id="fbReelsCaption" class="input" rows="3" placeholder="เขียนแคปชั่น... (เว้นว่างให้ AI คิดแคปชั่นใหม่ทุกคลิปไม่ซ้ำกัน)"></textarea>
+      <input id="fbReelsHashtags" class="input" type="text" placeholder="#แฮชแท็ก1 #แฮชแท็ก2 (เว้นว่างให้ AI แนะนำ)" style="margin-top:6px;">
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <button id="btnFbAiCaption" class="btn btn-secondary btn-sm" type="button">🤖 AI คิดแคปชั่น</button>
+        <button id="btnFbAiHashtags" class="btn btn-secondary btn-sm" type="button">🏷️ AI แฮชแท็ก</button>
+      </div>
+    </section>
+
+    <!-- Shopee Product Picker -->
+    <section class="card">
+      <h3 class="card-title">🛒 สินค้า Shopee (ปักตะกร้า)</h3>
+      <div id="fbReelsProductPicker">
+        <button id="btnFbReelsPickProduct" class="btn btn-secondary" type="button" style="width:100%;display:flex;align-items:center;gap:8px;justify-content:center;padding:12px;">
+          <span style="background:#f90;color:#fff;border-radius:50%;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;">+</span>
+          <span style="flex-direction:column;display:flex;text-align:left;">
+            <strong>เลือกสินค้า</strong>
+            <small style="opacity:.6">แตะเพื่อปักสินค้าลงตะกร้า</small>
+          </span>
+        </button>
+      </div>
+      <div id="fbReelsProductCard" class="hidden" style="display:flex;gap:10px;align-items:center;background:rgba(255,255,255,.06);border-radius:8px;padding:10px;margin-top:8px;position:relative;">
+        <img id="fbReelsProductImg" style="width:56px;height:56px;border-radius:6px;object-fit:cover;background:#333;" />
+        <div style="flex:1;min-width:0;">
+          <div id="fbReelsProductTitle" style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+          <div id="fbReelsProductPrice" style="color:#f90;font-size:13px;margin-top:2px;"></div>
+          <div id="fbReelsProductLinkText" style="font-size:11px;opacity:.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px;"></div>
+        </div>
+        <button id="btnFbReelsRemoveProduct" type="button" style="position:absolute;top:4px;right:6px;background:none;border:none;color:#f66;cursor:pointer;font-size:16px;padding:2px 6px;" title="ลบสินค้า">✕</button>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="card">
+      <h3 class="card-title">⚙️ ตั้งค่า Reels</h3>
+
+      <!-- AI Label Toggle -->
+      <div class="toggle-row-v2 compact">
+        <span class="toggle-text">เปิดป้ายกำกับ AI-Generated</span>
+        <label class="switch sm"><input type="checkbox" id="fbReelsAiLabel" checked><span class="slider round"></span></label>
+      </div>
+
+      <!-- Unique AI Caption for each clip -->
+      <div class="toggle-row-v2 compact" style="margin-top:6px;">
+        <span class="toggle-text">✨ AI คิดแคปชั่นใหม่ทุกคลิป (ไม่ซ้ำกัน)</span>
+        <label class="switch sm"><input type="checkbox" id="fbReelsUniqueAiCaption" checked><span class="slider round"></span></label>
+      </div>
+
+      <!-- Schedule Mode -->
+      <div style="margin-top:10px;">
+        <label style="font-size:13px; color:#ccc;">โหมดโพสต์</label>
+        <select id="fbReelsScheduleMode" class="input input-sm" style="margin-top:4px;">
+          <option value="now">โพสต์ทันที</option>
+          <option value="scheduled">กำหนดเวลา</option>
+        </select>
+      </div>
+
+      <!-- Schedule Date/Time (hidden by default) -->
+      <div id="fbReelsScheduleFields" class="hidden" style="margin-top:8px;">
+        <div style="display:flex; gap:8px;">
+          <input id="fbReelsDate" class="input input-sm" type="date" style="flex:1;">
+          <input id="fbReelsTime" class="input input-sm" type="time" step="300" style="flex:1;">
+        </div>
+        <!-- Batch interval for multiple clips -->
+        <div style="margin-top:8px; display:flex; align-items:center; gap:6px;">
+          <span style="font-size:12px; color:#aaa; white-space:nowrap;">ห่างกันทีละ:</span>
+          <button id="fbIntervalMinus" class="btn btn-secondary btn-sm" type="button" style="width:32px; padding:2px;">−</button>
+          <span id="fbIntervalValue" style="font-size:14px; color:#fff; min-width:50px; text-align:center; font-weight:bold;">30 นาที</span>
+          <button id="fbIntervalPlus" class="btn btn-secondary btn-sm" type="button" style="width:32px; padding:2px;">+</button>
+        </div>
+      </div>
+
+      <!-- Close tab when done -->
+      <div class="toggle-row-v2 compact" style="margin-top:8px;">
+        <span class="toggle-text">ปิดแท็บหลังโพสต์สำเร็จ</span>
+        <label class="switch sm"><input type="checkbox" id="fbReelsCloseTab" checked><span class="slider round"></span></label>
+      </div>
+    </section>
+
+    <!-- Progress -->
+    <section id="fbReelsProgress" class="card hidden">
+      <h3 class="card-title">📊 สถานะ</h3>
+      <div id="fbReelsProgressLog" class="progress-log"></div>
+    </section>
+
+    <!-- Action Buttons -->
+    <section class="card" style="display:flex; gap:8px;">
+      <button id="btnFbReelsPost" class="btn btn-primary" type="button" style="flex:1;">🚀 โพสต์ Reels</button>
+      <button id="btnFbReelsBatchQueue" class="btn btn-secondary" type="button" style="flex:1;">📋 ลงคิวทั้งหมด</button>
+    </section>
+
+  </main>
+
+  <!-- ─── Tab: Shopee Video ──────────────────────────────────────── -->
+  <main class="tab-content" id="tab-shopee-video">
+
+    <!-- Video Upload -->
+    <section class="card">
+      <h3 class="card-title" style="display:flex; align-items:center; gap:6px;">
+        <span style="color:#ee4d2d;">📹</span> คลิปวิดีโอ Shopee
+      </h3>
+      <p style="font-size:12px; color:#aaa; margin:0 0 8px;">เลือกคลิป (.mp4) สำหรับโพสต์ลง Shopee Video พร้อมปักตะกร้า</p>
+      <div class="upload-zone" id="shopeeVideoUploadZone" style="border: 2px dashed rgba(238, 77, 45, 0.4);">
+        <input type="file" id="shopeeVideoFileInput" accept="video/mp4,video/*" multiple hidden>
+        <p class="upload-text">📂 คลิกเลือกคลิป หรือลากวางที่นี่</p>
+      </div>
+      <div id="shopeeVideoFileList" class="file-list" style="margin-top:8px;"></div>
+    </section>
+
+    <!-- Shopee Product Picker -->
+    <section class="card">
+      <h3 class="card-title" style="display:flex; align-items:center; gap:6px;">
+        <span style="color:#ee4d2d;">🛒</span> สินค้า Shopee (ปักตะกร้า)
+      </h3>
+      <div id="shopeeVideoProductPicker">
+        <button id="btnShopeeVideoPickProduct" class="btn btn-secondary" type="button" style="width:100%;display:flex;align-items:center;gap:8px;justify-content:center;padding:12px;border:1px solid rgba(238,77,45,0.4);">
+          <span style="background:#ee4d2d;color:#fff;border-radius:50%;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;">+</span>
+          <span style="flex-direction:column;display:flex;text-align:left;">
+            <strong>เลือกสินค้า Shopee</strong>
+            <small style="opacity:.6">แตะเพื่อปักสินค้าลงตะกร้า Shopee Video</small>
+          </span>
+        </button>
+      </div>
+      <div id="shopeeVideoProductCard" class="hidden" style="display:flex;gap:10px;align-items:center;background:rgba(238,77,45,.08);border:1px solid rgba(238,77,45,.3);border-radius:8px;padding:10px;margin-top:8px;position:relative;">
+        <img id="shopeeVideoProductImg" style="width:56px;height:56px;border-radius:6px;object-fit:cover;background:#333;" />
+        <div style="flex:1;min-width:0;">
+          <div id="shopeeVideoProductTitle" style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+          <div id="shopeeVideoProductPrice" style="color:#ee4d2d;font-size:13px;margin-top:2px;"></div>
+          <div id="shopeeVideoProductLinkText" style="font-size:11px;opacity:.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px;"></div>
+        </div>
+        <button id="btnShopeeVideoRemoveProduct" type="button" style="position:absolute;top:4px;right:6px;background:none;border:none;color:#f66;cursor:pointer;font-size:16px;padding:2px 6px;" title="ลบสินค้า">✕</button>
+      </div>
+    </section>
+
+    <!-- Caption & Hashtags -->
+    <section class="card">
+      <h3 class="card-title">✍️ แคปชั่น & แฮชแท็ก Shopee</h3>
+      <textarea id="shopeeVideoCaption" class="input" rows="3" placeholder="เขียนแคปชั่น... (เว้นว่างให้ AI คิดแคปชั่นใหม่ทุกคลิปไม่ซ้ำกัน สไตล์ชวนช้อป)"></textarea>
+      <input id="shopeeVideoHashtags" class="input" type="text" placeholder="#ShopeeTH #ช้อปปี้ถูกชัวร์ #รีวิว (เว้นว่างให้ AI แนะนำ)" style="margin-top:6px;">
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <button id="btnShopeeAiCaption" class="btn btn-secondary btn-sm" type="button">🤖 AI คิดแคปชั่น</button>
+        <button id="btnShopeeAiHashtags" class="btn btn-secondary btn-sm" type="button">🏷️ AI แฮชแท็ก</button>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="card">
+      <h3 class="card-title">⚙️ ตั้งค่า Shopee Video</h3>
+
+      <!-- Device Connection Status -->
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:rgba(255,255,255,.04); border-radius:6px; margin-bottom:10px;">
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span id="shopeeDeviceDot" style="width:8px; height:8px; border-radius:50%; background:#22c55e; display:inline-block;"></span>
+          <span id="shopeeDeviceText" style="font-size:11px; color:#ccc;">มือถือ: โหมดไร้สาย (Cloud Sync)</span>
+        </div>
+        <button id="btnCheckShopeeDevice" class="btn btn-secondary btn-sm" type="button" style="font-size:10px; padding:2px 8px;">🔄 เช็คสถานะ</button>
+      </div>
+
+      <!-- Target Device Selector -->
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px; color:#ccc; display:flex; justify-content:space-between; align-items:center;">
+          <span>📱 ส่งคลิปเข้าเครื่อง</span>
+          <span id="shopeeDeviceBadge" style="font-size:10px; color:#ee4d2d;">1 เครื่อง</span>
+        </label>
+        <select id="shopeeVideoTargetDevice" class="input input-sm" style="margin-top:4px;">
+          <!-- Populated dynamically -->
+        </select>
+      </div>
+
+      <!-- Unique AI Caption for each clip -->
+      <div class="toggle-row-v2 compact">
+        <span class="toggle-text">✨ AI คิดแคปชั่นใหม่ทุกคลิป (ไม่ซ้ำกัน)</span>
+        <label class="switch sm"><input type="checkbox" id="shopeeVideoUniqueAiCaption" checked><span class="slider round"></span></label>
+      </div>
+
+      <!-- Schedule Mode -->
+      <div style="margin-top:10px;">
+        <label style="font-size:13px; color:#ccc;">โหมดส่งโพสต์</label>
+        <select id="shopeeVideoScheduleMode" class="input input-sm" style="margin-top:4px;">
+          <option value="now">ส่งเข้าคิวโพสต์ทันที</option>
+          <option value="scheduled">กำหนดเวลาโพสต์</option>
+        </select>
+      </div>
+
+      <!-- Schedule Date/Time (hidden by default) -->
+      <div id="shopeeVideoScheduleFields" class="hidden" style="margin-top:8px;">
+        <div style="display:flex; gap:8px;">
+          <input id="shopeeVideoDate" class="input input-sm" type="date" style="flex:1;">
+          <input id="shopeeVideoTime" class="input input-sm" type="time" step="300" style="flex:1;">
+        </div>
+        <!-- Batch interval for multiple clips -->
+        <div style="margin-top:8px; display:flex; align-items:center; gap:6px;">
+          <span style="font-size:12px; color:#aaa; white-space:nowrap;">ห่างกันทีละ:</span>
+          <button id="shopeeIntervalMinus" class="btn btn-secondary btn-sm" type="button" style="width:32px; padding:2px;">−</button>
+          <span id="shopeeIntervalValue" style="font-size:14px; color:#fff; min-width:50px; text-align:center; font-weight:bold;">15 นาที</span>
+          <button id="shopeeIntervalPlus" class="btn btn-secondary btn-sm" type="button" style="width:32px; padding:2px;">+</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Progress -->
+    <section id="shopeeVideoProgress" class="card hidden">
+      <h3 class="card-title">📊 สถานะ</h3>
+      <div id="shopeeVideoProgressLog" class="progress-log"></div>
+    </section>
+
+    <!-- Action Buttons -->
+    <section class="card" style="display:flex; gap:8px;">
+      <button id="btnShopeeVideoPost" class="btn btn-primary" type="button" style="flex:1; background:#ee4d2d; border-color:#ee4d2d;">🚀 ส่งโพสต์ Shopee</button>
+      <button id="btnShopeeVideoBatchQueue" class="btn btn-secondary" type="button" style="flex:1;">📋 ลงคิวทั้งหมด</button>
+    </section>
+
+  </main>
+
+  <!-- ─── Tab: Queue ────────────────────────────────────────────── -->
+  <main class="tab-content" id="tab-queue">
+    <!-- Stats Bar -->
+    <div class="queue-stats">
+      <div class="stat-box"><span id="statTotal" class="stat-num" style="color:#3b82f6;">0</span><span class="stat-label">ทั้งหมด</span></div>
+      <div class="stat-box"><span id="statSuccess" class="stat-num" style="color:#22c55e;">0</span><span class="stat-label">สำเร็จ</span></div>
+      <div class="stat-box" id="statFailedBox" style="cursor:pointer;" title="คลิกเพื่อรีเซ็ตแถวที่พลาดทั้งหมด"><span id="statFailed" class="stat-num" style="color:#ef4444;">0</span><span class="stat-label">ไม่สำเร็จ 🔄</span></div>
+    </div>
+
+    <!-- Recent Jobs Header -->
+    <section class="card">
+      <div class="queue-header">
+        <h3 class="card-title" style="margin:0;">Recent jobs</h3>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <button id="btnStartQueue" class="btn btn-primary btn-sm" type="button">▶ Run</button>
+          <button id="btnRetryFailedQueue" class="btn btn-outline btn-sm hidden" type="button" style="color:#ef4444; border-color:#ef4444; font-weight:700;" title="ลองใหม่เฉพาะแถวที่โพสต์ไม่สำเร็จ">🔄 ลองใหม่ (<span id="failedQueueCount">0</span>)</button>
+          <button id="btnPauseQueue" class="btn btn-secondary btn-sm" type="button" disabled>⏸ Pause</button>
+          <button id="btnClearQueue" class="btn btn-danger btn-sm" type="button">🗑 Clear</button>
+        </div>
+        <span id="queueCount" class="badge" style="display:none;">0</span>
+      </div>
+      <div class="queue-table-wrap">
+        <table class="queue-table">
+          <thead><tr><th>#</th><th>คลิป</th><th>สินค้า</th><th>โพสต์ / แคปชั่น</th><th></th></tr></thead>
+          <tbody id="queueList"><tr><td colspan="5" class="queue-empty">ยังไม่มีรายการในคิว</td></tr></tbody>
+        </table>
+      </div>
+      <div id="queueCountdown" class="queue-countdown hidden"></div>
+    </section>
+  </main>
+
+  <!-- ─── Delay Popup Modal ────────────────────────────────── -->
+  <div id="delayModal" class="modal-overlay hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">
+    <div class="modal-box" style="max-width:340px;width:100%;border-radius:16px;padding:20px;border:1.5px solid var(--border);box-shadow:0 10px 30px rgba(0,0,0,0.25);background:var(--bg-card);animation:fadeIn 0.2s ease;">
+      <h3 class="card-title" style="margin:0 0 6px 0;font-size:14px;font-weight:700;color:var(--text-primary);">⏱️ หน่วงเวลาระหว่างแถว</h3>
+      <p style="font-size:11px;color:var(--text-muted);margin:0 0 14px 0;line-height:1.4;">สุ่มเวลารอในช่วงนี้หลังโพสต์ TikTok เสร็จ ก่อนเริ่มทำแถวถัดไป</p>
+      <div class="toggle-row-v2 compact" style="margin-bottom:12px;padding:8px 12px;background:var(--bg-hover);border:1px solid var(--border-light);border-radius:8px;">
+        <span class="toggle-text" style="font-size:12px;font-weight:600;color:var(--text-primary);">เปิดหน่วงเวลาระหว่างแถว</span>
+        <label class="switch sm"><input type="checkbox" id="toggleRandomDelay" checked><span class="slider round"></span></label>
+      </div>
+      <div id="delaySettings" class="delay-range-row" style="margin-bottom:18px;padding:10px;background:var(--bg-hover);border:1px solid var(--border-light);border-radius:8px;justify-content:center;gap:8px;">
+        <input id="queueDelayMin" class="input input-sm" type="number" min="10" max="3600" value="100" style="width:70px;text-align:center;background:var(--bg-input);border:1.5px solid var(--border);">
+        <span style="font-weight:700;color:var(--text-muted);">–</span>
+        <input id="queueDelayMax" class="input input-sm" type="number" min="10" max="3600" value="200" style="width:70px;text-align:center;background:var(--bg-input);border:1.5px solid var(--border);">
+        <span style="font-size:11px;color:var(--text-muted);">วินาที</span>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:4px;">
+        <button id="btnConfirmRun" class="btn btn-primary" type="button" style="flex:1.2;padding:8px 12px;font-size:12px;font-weight:700;">🚀 เริ่มรันคิว</button>
+        <button id="btnCancelRun" class="btn btn-secondary" type="button" style="flex:0.8;padding:8px 12px;font-size:12px;">ยกเลิก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Tab: Products ─────────────────────────────────────── -->
+  <main class="tab-content" id="tab-products">
+    <section class="card">
+      <div class="queue-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; align-items:center; gap:6px;">
+          <h3 class="card-title" style="margin:0;">🎵 สินค้า TikTok</h3>
+          <span id="productCount" class="badge">0</span>
+        </div>
+        <button id="btnTikTokLogin" class="btn btn-secondary btn-sm" type="button" style="font-size:11px; padding:4px 10px; background:#ff0050; border-color:#ff0050; color:#fff; font-weight:600; cursor:pointer; border-radius:6px; display:inline-flex; align-items:center; gap:4px;">🔑 ล็อกอิน TikTok</button>
+      </div>
+      <p class="hint">สแกนสินค้าจากตู้โชว์ (Showcase) ใน TikTok Shop ของคุณ (ต้องล็อกอินในเบราว์เซอร์ก่อน)</p>
+      <div class="queue-controls" style="margin-top: 10px;">
+        <button id="btnFetchShowcaseApi" class="btn btn-primary" type="button">🚀 ดึงสินค้า (API)</button>
+        <button id="btnScanProducts" class="btn btn-outline" type="button">🔍 สแกน DOM</button>
+        <button id="btnClearProducts" class="btn btn-danger" type="button">🗑️ ล้าง</button>
+      </div>
+      <div style="margin-top: 8px;">
+        <button id="btnSyncAllToFlow" class="btn btn-secondary" type="button" style="width:100%; font-size:12px; font-weight:600; background:linear-gradient(135deg, #1e3a8a, #2563eb); border:1px solid #3b82f6; color:#fff; display:flex; align-items:center; justify-content:center; gap:6px; padding:6px 12px; border-radius:6px; cursor:pointer;" title="คัดลอกข้อมูลสินค้าทั้งหมดเข้า Clipboard สำหรับปุ่ม Sync from Extension ใน Ai SALER PRO">
+          <span>⚡</span> ซิงค์สินค้าทั้งหมดไป Ai SALER PRO (Google Flow)
+        </button>
+      </div>
+      <div id="scanStatus" class="status-msg hidden" style="margin-top: 8px;"></div>
+    </section>
+    <section class="card">
+      <input id="productSearch" class="input" placeholder="🔍 ค้นหาสินค้า... (ชื่อ / ID)">
+    </section>
+    <div id="productList" class="product-list">
+      <div class="queue-empty">ยังไม่มีสินค้า กดสแกนเพื่อดึงจาก TikTok</div>
+    </div>
+  </main>
+
+  <!-- ─── Tab: Shopee ─────────────────────────────────────────── -->
+  <main class="tab-content" id="tab-shopee">
+    <section class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 class="card-title" style="margin:0;">🟠 ดึงสินค้า Shopee</h3>
+        <button id="btnShopeeLogin" class="btn btn-secondary btn-sm" type="button" style="font-size:10px; padding:3px 10px; background:#ee4d2d; border-color:#ee4d2d; color:#fff;">🔑 ล็อกอิน Affiliate</button>
+      </div>
+      <p class="hint">วาง URL สินค้า Shopee แล้วกดดึง (ต้องล็อกอิน affiliate.shopee.co.th)</p>
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <input id="shopeeUrlInput" class="input" placeholder="วาง URL สินค้า Shopee..." style="flex:1;">
+        <button id="btnShopeeGo" class="btn btn-primary" type="button">ดึง</button>
+      </div>
+      <div id="shopeeStatus" class="status-msg hidden" style="margin-top:8px;"></div>
+    </section>
+
+    <!-- Product Result Card -->
+    <section id="shopeeProductCard" class="card hidden">
+      <div style="display:flex; gap:10px; align-items:flex-start;">
+        <img id="shopeeProductImg" src="" alt="" style="width:90px; height:90px; object-fit:cover; border-radius:8px; background:#1a1a2e; flex-shrink:0;">
+        <div style="flex:1; min-width:0;">
+          <div id="shopeeProductName" style="font-size:13px; color:#e0e0e0; font-weight:600; line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;"></div>
+          <div style="margin-top:4px; display:flex; align-items:baseline; gap:6px;">
+            <span id="shopeeProductPrice" style="font-size:16px; color:#ff6740; font-weight:bold;"></span>
+            <span id="shopeeProductOrigPrice" style="font-size:12px; color:#888; text-decoration:line-through;"></span>
+            <span id="shopeeProductDiscount" class="badge" style="background:#ff6740; color:#fff; font-size:10px; padding:1px 5px;"></span>
+          </div>
+          <div style="margin-top:4px; font-size:11px; color:#aaa; display:flex; gap:8px; flex-wrap:wrap;">
+            <span id="shopeeProductRating"></span>
+            <span id="shopeeProductSold"></span>
+          </div>
+        </div>
+      </div>
+      <div id="shopeeAffLink" style="margin-top:8px; font-size:11px; color:#1877f2; word-break:break-all;"></div>
+
+      <!-- Gallery -->
+      <div id="shopeeGallery" style="margin-top:8px; display:flex; gap:4px; overflow-x:auto; padding-bottom:4px;"></div>
+
+      <!-- Action Buttons -->
+      <div style="margin-top:10px; display:flex; gap:6px; flex-wrap:wrap;">
+        <button id="btnShopeeCopyLink" class="btn btn-secondary btn-sm" type="button">📋 คัดลอก Link</button>
+        <button id="btnShopeeAiCaption" class="btn btn-secondary btn-sm" type="button">📝 สร้างแคปชั่น AI</button>
+        <button id="btnShopeeUseReels" class="btn btn-primary btn-sm" type="button">📤 ใช้โพสต์ Reels</button>
+        <button id="btnShopeeUseShopeeVideoSingle" class="btn btn-secondary btn-sm" type="button" style="background:#ee4d2d; border-color:#ee4d2d; color:#fff;">🎥 ใช้โพสต์ Shopee VDO</button>
+        <button id="btnShopeeSyncFlow" class="btn btn-secondary btn-sm" type="button" style="background:linear-gradient(135deg, #1e3a8a, #2563eb); border:1px solid #3b82f6; color:#fff;" title="คัดลอกข้อมูลสินค้าเข้า Clipboard สำหรับปุ่ม Sync from Extension ใน Ai SALER PRO">⚡ ส่งไป Ai SALER PRO</button>
+      </div>
+      <div id="shopeeAiCaption" class="hidden" style="margin-top:8px;">
+        <textarea id="shopeeCaptionResult" class="textarea" rows="4" placeholder="แคปชั่น AI จะแสดงที่นี่..." style="font-size:12px;"></textarea>
+      </div>
+    </section>
+
+    <!-- History -->
+    <section class="card">
+      <h3 class="card-title" style="font-size:13px;">📦 สินค้าล่าสุด</h3>
+      <div id="shopeeHistory" style="font-size:12px; color:#888;">ยังไม่มีประวัติ</div>
+    </section>
+
+    <!-- ── Shopee Keyword Scanner ──────────────── -->
+    <section class="card">
+      <h3 class="card-title">🔍 สแกนสินค้า Shopee</h3>
+      <p class="hint">ค้นหาสินค้าขายดี + Extra Comm จาก Shopee Affiliate</p>
+
+      <!-- Search Row -->
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <input id="shopeeScanKeyword" class="input" placeholder="พิมพ์ keyword เช่น รองเท้าวิ่ง, หูฟัง" style="flex:1;">
+        <select id="shopeeScanPages" class="input-select" style="width:70px;">
+          <option value="1">1 หน้า</option>
+          <option value="2">2 หน้า</option>
+          <option value="3" selected>3 หน้า</option>
+          <option value="5">5 หน้า</option>
+        </select>
+        <button id="btnShopeeScan" class="btn btn-primary" type="button">🔥 สแกน</button>
+      </div>
+
+      <!-- Filters -->
+      <div style="margin-top:8px; display:flex; gap:10px; flex-wrap:wrap; font-size:11px; color:#ccc;">
+        <label style="display:flex; align-items:center; gap:3px; cursor:pointer;">
+          <input type="checkbox" id="shopeeFilterExtraComm" checked> ค่าคอมพิเศษ
+        </label>
+        <label style="display:flex; align-items:center; gap:3px; cursor:pointer;">
+          <input type="checkbox" id="shopeeFilterMall"> Mall
+        </label>
+        <label style="display:flex; align-items:center; gap:3px; cursor:pointer;">
+          <input type="checkbox" id="shopeeFilterPreferred"> ร้านแนะนำ
+        </label>
+      </div>
+
+      <!-- Sort -->
+      <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; font-size:11px;">
+        <select id="shopeeScanSort" class="input-select" style="font-size:11px; padding:3px 6px;">
+          <option value="relevance">ความเกี่ยวข้อง</option>
+          <option value="commission">คอมมิชชั่น(%)</option>
+          <option value="sold" selected>ขายดี</option>
+          <option value="price_asc">ราคา: ต่ำ→สูง</option>
+          <option value="price_desc">ราคา: สูง→ต่ำ</option>
+        </select>
+      </div>
+
+      <div id="shopeeScanStatus" class="status-msg hidden" style="margin-top:8px;"></div>
+    </section>
+
+    <!-- Quick Sort Chips + Results -->
+    <section id="shopeeScanResultsWrap" class="card hidden">
+      <div style="display:flex; gap:4px; margin-bottom:8px; flex-wrap:wrap;">
+        <button class="btn btn-secondary btn-sm shopee-sort-chip active" data-sort="score">🏆 Score</button>
+        <button class="btn btn-secondary btn-sm shopee-sort-chip" data-sort="sold">🔥 ขายดี</button>
+        <button class="btn btn-secondary btn-sm shopee-sort-chip" data-sort="revenue">💸 รายได้</button>
+        <button class="btn btn-secondary btn-sm shopee-sort-chip" data-sort="rating">⭐ ดาว</button>
+        <button class="btn btn-secondary btn-sm shopee-sort-chip" data-sort="price">💰 ราคา</button>
+      </div>
+      <div id="shopeeScanCount" style="font-size:11px; color:#aaa; margin-bottom:6px;"></div>
+      <div id="shopeeScanActions" class="hidden" style="display:flex; gap:6px; margin-bottom:8px; align-items:center; flex-wrap:wrap;">
+        <label style="display:flex; align-items:center; gap:4px; cursor:pointer; font-size:12px; color:#ccc;">
+          <input type="checkbox" id="shopeeSelectAll"> เลือกทั้งหมด
+        </label>
+        <span id="shopeeSelectedCount" style="font-size:11px; color:#f90; flex:1;">0 รายการ</span>
+        <button id="btnShopeeGetLinks" class="btn btn-primary btn-sm" type="button" style="font-size:11px; padding:4px 10px;">🔗 ดึงลิงก์ที่เลือก</button>
+        <button id="btnShopeeUseReels" class="btn btn-secondary btn-sm" type="button" style="font-size:11px; padding:4px 10px;">📤 ใช้ Reels</button>
+        <button id="btnShopeeUseShopeeVideo" class="btn btn-secondary btn-sm" type="button" style="font-size:11px; padding:4px 10px; background:rgba(238,77,45,.15); border-color:#ee4d2d; color:#ff6740;">🎥 ใช้ Shopee VDO</button>
+      </div>
+      <div id="shopeeScanResults" style="display:flex; flex-direction:column; gap:6px;"></div>
+    </section>
+  </main>
+
+  <!-- ─── Tab: Settings ─────────────────────────────────────────── -->
+  <main class="tab-content" id="tab-settings">
+    <section class="card">
+      <h3 class="card-title">🤖 ตั้งค่า AI</h3>
+      <div class="form-row"><label>ผู้ให้บริการ</label><select id="settingsApiProvider" class="input-select"><option value="openrouter">OpenRouter (แนะนำ)</option><option value="gemini">Google Gemini</option></select></div>
+      <div class="form-row"><label>OpenRouter Key</label><input id="settingsApiKey" class="input" type="password" placeholder="sk-or-..."></div>
+      <div class="form-row"><label>Gemini API Key</label><input id="settingsGeminiKey" class="input" type="password" placeholder="AIza..."></div>
+      <div class="form-row"><label>โมเดล AI</label><select id="settingsModel" class="input-select"></select></div>
+      <div class="form-row" style="margin-top:10px;"><button id="btnTestApi" class="btn btn-secondary" type="button" style="width:100%;">🧪 ทดสอบ API Key</button></div>
+    </section>
+    <section class="card">
+      <h3 class="card-title">🌐 ภาษา</h3>
+      <div class="form-row">
+        <label>ภาษา</label>
+        <select id="settingsLang" class="input-select">
+          <option value="th">🇹🇭 ไทย</option>
+          <option value="en">🇬🇧 English</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>ขนาดหน้าจอ (ซูม)</label>
+        <select id="settingsZoom" class="input-select">
+          <option value="1">ปกติ (100%)</option>
+          <option value="1.25">ใหญ่ขึ้น (125%)</option>
+          <option value="1.5">ใหญ่มาก (150%)</option>
+          <option value="1.75">ใหญ่สุดๆ (175%)</option>
+          <option value="2">ขนาดยักษ์ (200%)</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- ☁️ Cloud Sync (ส่งคลิปเข้ามือถือ Shopee Video) -->
+    <section class="card" id="ucCloudCard">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:20px;">☁️</span>
+          <div>
+            <h3 class="card-title" style="margin:0;font-size:13px;">ส่งคลิปเข้ามือถือ (Cloud Sync Shopee)</h3>
+            <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">ส่งคลิปเข้าแอปมือถือ Ai Affiliate Shopee เพื่อโพสต์ Shopee Video + ปักตะกร้าให้อัตโนมัติ</div>
+          </div>
+        </div>
+        <span id="ucCloudPill" style="font-size:10px;padding:3px 8px;border-radius:12px;background:rgba(255,255,255,0.08);color:var(--text-muted);white-space:nowrap;">ปิดอยู่</span>
+      </div>
+
+      <div class="toggle-row-v2 compact">
+        <span class="toggle-text">เปิดส่งคลิปเข้ามือถืออัตโนมัติ</span>
+        <label class="switch sm">
+          <input id="ucCloudEnabled" type="checkbox">
+          <span class="slider round"></span>
+        </label>
+      </div>
+
+      <div class="toggle-row-v2 compact">
+        <span class="toggle-text">ให้มือถือโพสต์ทันทีเมื่อได้รับคลิป</span>
+        <label class="switch sm">
+          <input id="ucCloudAutoStart" type="checkbox" checked>
+          <span class="slider round"></span>
+        </label>
+      </div>
+
+      <!-- Multi-Device List Section -->
+      <div style="margin-top:12px;border-top:1px dashed var(--border);padding-top:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <label style="font-size:12px;font-weight:600;color:var(--text-main);">📱 รายชื่อเครื่องมือถือ (Devices & Keys)</label>
+          <button id="ucCloudBtnShowAdd" class="btn btn-outline btn-sm" type="button" style="font-size:11px;padding:2px 8px;">+ เพิ่มเครื่องใหม่</button>
+        </div>
+
+        <div id="ucCloudDeviceList" style="display:flex;flex-direction:column;gap:6px;"></div>
+
+        <!-- Add Device Form (collapsible) -->
+        <div id="ucCloudAddForm" class="hidden" style="margin-top:8px;padding:10px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;">
+          <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:var(--text-main);">➕ เพิ่มเครื่องมือถือใหม่</div>
+          <div style="margin-bottom:6px;">
+            <input id="ucCloudNewDevName" class="input input-sm" type="text" placeholder="ชื่อเครื่อง เช่น เครื่อง 2 (Shopee Shop B)" style="font-size:12px;width:100%;">
+          </div>
+          <div style="display:flex;gap:6px;margin-bottom:8px;">
+            <input id="ucCloudNewDevCode" class="input input-sm" type="text" placeholder="รหัสจับคู่ 12 หลัก (XXXX-XXXX-XXXX)" style="font-family:monospace;letter-spacing:1px;font-size:12px;flex:1;">
+            <button id="ucCloudBtnGenKey" class="btn btn-secondary btn-sm" type="button" title="สุ่มสร้าง Key 12 หลักสำหรับเครื่องใหม่" style="font-size:11px;white-space:nowrap;">✨ สร้าง Key</button>
+          </div>
+          <div style="display:flex;gap:6px;justify-content:flex-end;">
+            <button id="ucCloudBtnCancelDev" class="btn btn-secondary btn-sm" type="button" style="font-size:11px;">ยกเลิก</button>
+            <button id="ucCloudBtnSaveDev" class="btn btn-primary btn-sm" type="button" style="font-size:11px;">บันทึกเครื่อง</button>
+          </div>
+        </div>
+      </div>
+
+      <p id="ucCloudHint" class="hint" style="margin-top:8px;">เปิดแอปมือถือ → ตั้งค่า → “☁️ รับคลิปจากคอม” → นำรหัสมากรอก หรือกด "✨ สร้าง Key" เพื่อใช้กับหลายเครื่องได้ทันที</p>
+
+    </section>
+
+    <!-- ⚡ PUP PAP POST Bridge (เชื่อมต่อมือถือโดยตรง / USB / Port 17881) -->
+    <section class="card" id="shopeeBridgeCard">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:20px;">⚡</span>
+          <div>
+            <h3 class="card-title" style="margin:0;font-size:13px;">PUP PAP POST Bridge (รับคลิปอัตโนมัติ)</h3>
+            <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">เชื่อมต่อแอปมือถือ Shopee ตรงผ่านสาย USB หรือ Port 17881 เพื่อรับคลิปทันที</div>
+          </div>
+        </div>
+        <span id="shopeeBridgePill" style="font-size:10px;padding:3px 8px;border-radius:12px;background:rgba(255,255,255,0.08);color:var(--text-muted);white-space:nowrap;">กำลังตรวจสอบ...</span>
+      </div>
+
+      <div style="margin-bottom:8px;">
+        <label style="font-size:11px;font-weight:600;color:var(--text-main);display:block;margin-bottom:4px;">Endpoint (URL Bridge)</label>
+        <input id="shopeeBridgeEndpoint" class="input input-sm" type="text" placeholder="http://127.0.0.1:17881" value="http://127.0.0.1:17881" style="font-size:12px;width:100%;">
+      </div>
+
+      <div style="margin-bottom:8px;">
+        <label style="font-size:11px;font-weight:600;color:var(--text-main);display:block;margin-bottom:4px;">PUP PAP POST Bridge Token</label>
+        <input id="shopeeBridgeToken" class="input input-sm" type="text" placeholder="SHOPEE-XXXXX-XXXXX-..." style="font-family:monospace;letter-spacing:1px;font-size:12px;width:100%;">
+      </div>
+
+      <div style="display:flex;gap:6px;margin-top:10px;">
+        <button id="btnTestBridgeConn" class="btn btn-secondary btn-sm" type="button" style="flex:1;font-size:11px;">📡 ทดสอบเชื่อมต่อ Bridge</button>
+        <button id="btnStartUsbForward" class="btn btn-outline btn-sm" type="button" style="font-size:11px;" title="เชื่อมต่อสาย USB (ADB Forward 17881)">🔌 ต่อสาย USB</button>
+      </div>
+
+      <p id="shopeeBridgeHint" class="hint" style="margin-top:8px;">เปิดแอปมือถือ → แท็บ “ตั้งค่า” → แตะ “คัดลอก Token” ในกล่อง PUP PAP POST Bridge แล้วนำมากรอกที่นี่</p>
+    </section>
+
+    <!-- 🚀 ตรวจสอบการอัปเดต Extension -->
+    <section class="card" id="extUpdateCard">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:20px;">🚀</span>
+          <div>
+            <h3 class="card-title" style="margin:0;font-size:13px;">อัปเดต Extension</h3>
+            <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">เวอร์ชันปัจจุบัน: <b id="extCurrentVer" style="color:var(--accent);">v1.3.4</b></div>
+          </div>
+        </div>
+        <button id="btnCheckExtUpdate" class="btn btn-outline btn-sm" type="button" style="font-size:11px;padding:4px 12px;">🔍 ตรวจสอบอัปเดต</button>
+      </div>
+      <div id="extUpdateResult" class="hidden" style="margin-top:8px;padding:10px;border-radius:8px;font-size:12px;"></div>
+    </section>
+
+    <section class="card">
+      <button id="btnSaveSettings" class="btn btn-primary btn-lg" type="button">💾 บันทึกตั้งค่า</button>
+      <div id="settingsStatus" class="status-msg hidden"></div>
+    </section>
+  </main>
+
+  <!-- ─── Tab: Factory (โรงงานวีดีโอ AI) ────────────────────── -->
+  <main class="tab-content" id="tab-factory">
+
+    <!-- Google Flow Status -->
+    <section class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span id="flowStatusDot" style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block;"></span>
+          <span id="flowStatusText" style="font-size:11px;color:var(--text-dim);">Google Flow: ยังไม่ได้ล็อกอิน</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button id="btnClearFlowCache" class="btn btn-outline" type="button" style="font-size:11px;padding:4px 10px;" title="ล้างแคชและ IndexedDB ของ Google Flow เพื่อแก้ปัญหาค้างหรือ Error">🧹 ล้างแคช Flow</button>
+          <button id="btnLoginFlow" class="btn btn-outline" type="button" style="font-size:11px;padding:4px 12px;">🔑 ล็อกอิน Google Flow</button>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:11px;font-weight:600;color:#60a5fa;">⚡ Ai SALER PRO:</span>
+          <span id="flowToolStateBadge" style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.3);">idle (พร้อมรับข้อมูล)</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button id="btnUpgradeFlowTool" class="btn btn-outline btn-sm" type="button" style="font-size:10px;padding:2px 6px;border-color:#f59e0b;color:#fbbf24;" title="สั่งอัปเกรดโค้ด Tool ใน Google Flow ให้ซิงค์กับ PUP PAP AI 100% (เสียง 44.1kHz Stereo + Auto Export)">🛠️ อัปเกรด Tool 100%</button>
+          <button id="btnInspectFlowDOM" class="btn btn-outline btn-sm" type="button" style="font-size:10px;padding:2px 6px;border-color:#10b981;color:#34d399;" title="ดึงข้อมูล DOM และโครงสร้าง Tool จาก Google Flow ลง Clipboard ทันที">🔍 ดึง DOM Tool</button>
+          <button id="btnCheckFlowState" class="btn-link" type="button" style="font-size:11px;color:var(--text-muted);cursor:pointer;" title="ตรวจสอบสถานะ Tool ใน Google Flow">🔄 ตรวจสอบ</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Product Queue -->
+    <section class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <h3 class="card-title" style="margin:0;">📰 คิวสินค้า</h3>
+        <div style="display:flex;gap:4px;">
+          <button id="btnFactoryClearFlowQueue" class="btn btn-outline btn-sm" type="button" style="font-size:10px;padding:2px 6px;color:#f87171;border-color:rgba(239,68,68,0.4);" title="ล้างคิวสินค้าใน Ai SALER PRO">🗑️ ล้างใน Tool</button>
+          <button id="btnFactorySyncFlow" class="btn btn-outline btn-sm" type="button" style="font-size:10px;padding:2px 8px;border-color:#3b82f6;color:#60a5fa;" title="ซิงค์คิวสินค้านี้ไป Ai SALER PRO">⚡ ซิงค์ไป Flow</button>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">เลือกสินค้าจากคลังเพื่อผลิตวีดีโอโฆษณา AI</p>
+      <div class="form-row" style="margin-bottom:8px;">
+        <label style="font-size:11px;font-weight:600;">📦 แหล่งสินค้า</label>
+        <select id="factoryProductSource" class="input-select" style="font-size:12px;padding:6px 10px;">
+          <option value="tiktok" selected>🎵 TikTok Shop</option>
+          <option value="shopee">🛒 Shopee</option>
+        </select>
+      </div>
+      <div id="factoryProductQueue" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;"></div>
+      <button id="btnAddFactoryProduct" class="btn btn-outline" type="button" style="width:100%;font-size:12px;">+ เพิ่มสินค้าจากคลัง</button>
+    </section>
+
+    <!-- Production Mode -->
+    <section class="card">
+      <h3 class="card-title">🎬 โหมดถ่ายทำ</h3>
+      <div style="display:flex;gap:6px;margin-bottom:12px;">
+        <button class="btn factory-mode-btn active" data-mode="influencer" style="flex:1;font-size:11px;">🧑 อินฟลูเอนเซอร์</button>
+        <button class="btn factory-mode-btn" data-mode="hands" style="flex:1;font-size:11px;">✋ มือเท่านั้น</button>
+      </div>
+      <!-- Character Reference (shown in influencer mode) -->
+      <div id="factoryCharSection">
+        <label class="section-label">รูปตัวละคร Reference <span class="label-sub">(ใช้คุมหน้าตาให้คงที่ · วิเคราะห์เพศอัตโนมัติ)</span></label>
+        <div id="factoryCharGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px;"></div>
+        <button id="btnAddChar" class="btn btn-outline" type="button" style="width:100%;margin-top:8px;font-size:11px;">📷 อัปโหลดรูปตัวละคร</button>
+      </div>
+      <!-- Voice & Persona Gender (shown in BOTH influencer and hands modes) -->
+      <div id="factoryVoiceSection" style="margin-top:10px;">
+        <label class="section-label">เพศตัวละคร / เสียงพากย์ (คำลงท้าย)</label>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <button class="btn factory-voice-btn active" data-voice="female" style="flex:1;font-size:11px;">👩 หญิง (ค่ะ)</button>
+          <button class="btn factory-voice-btn" data-voice="male" style="flex:1;font-size:11px;">👨 ชาย (ครับ)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Video Engine Selector -->
+    <section class="card">
+      <h3 class="card-title">🎬 Engine สร้างวิดีโอ</h3>
+      <div class="form-row">
+        <label>เลือก Engine</label>
+        <select id="factoryVideoEngine" class="input-select">
+          <option value="google_flow" selected>⚡ Google Flow (Ai SALER PRO)</option>
+          <option value="meta_ai">🤖 Meta AI</option>
+        </select>
+      </div>
+      <div id="metaAiPromptBox" class="hidden" style="margin-top:8px;">
+        <div class="form-row">
+          <label>แนวคลิป / Prompt (สำหรับ Meta AI)</label>
+          <textarea id="metaAiPrompt" class="input-select" rows="3" placeholder="เช่น: ทำคลิปรีวิวสินค้าแนวตลก สนุกสนาน เน้นให้เห็นสินค้าชัดเจน" style="font-size:11px;resize:vertical;"></textarea>
+        </div>
+        <div class="form-row" style="margin-top:6px;">
+          <label>จำนวนฉากต่อคลิป (ฉากละ ~10 วินาที)</label>
+          <select id="metaAiSceneCount" class="input-select">
+            <option value="1" selected>1 ฉาก (~10 วิ - แนะนำ)</option>
+            <option value="2">2 ฉาก (~20 วิ)</option>
+            <option value="3">3 ฉาก (~30 วิ)</option>
+            <option value="4">4 ฉาก (~40 วิ)</option>
+            <option value="5">5 ฉาก (~50 วิ)</option>
+          </select>
+        </div>
+        <div class="form-row" style="margin-top:6px;">
+          <label>เพศตัวละคร / มือ</label>
+          <select id="metaAiCharGender" class="input-select">
+            <option value="female" selected>👩 หญิง</option>
+            <option value="male">👨 ชาย</option>
+          </select>
+        </div>
+        <!-- ตัวเลือกเพิ่มเติมสำหรับโหมดอินฟลูเอนเซอร์ -->
+        <div id="metaAiInfluencerOpts">
+          <div class="form-row" style="margin-top:6px;">
+            <label>สไตล์การแต่งตัว</label>
+            <select id="metaAiCharStyle" class="input-select">
+              <option value="casual" selected>👕 Casual สบายๆ</option>
+              <option value="smart">👔 Smart Casual ดูดี</option>
+              <option value="cute">🎀 Cute น่ารัก</option>
+              <option value="professional">💼 Professional ทางการ</option>
+              <option value="sporty">🏃 Sporty กระฉับกระเฉง</option>
+            </select>
+          </div>
+          <div class="form-row" style="margin-top:6px;">
+            <label>ช่วงวัย</label>
+            <select id="metaAiCharAge" class="input-select">
+              <option value="teen">🧑 วัยรุ่น (16-20 ปี)</option>
+              <option value="young_adult" selected>🙂 วัยผู้ใหญ่ตอนต้น (22-28 ปี)</option>
+              <option value="adult">😊 วัยผู้ใหญ่ (28-35 ปี)</option>
+              <option value="mature">🧓 วัยกลางคน (35-45 ปี)</option>
+            </select>
+          </div>
+          <div class="form-row" style="margin-top:6px;">
+            <label>คำอธิบายตัวละคร <span style="font-weight:400;color:var(--text-dim);">(ยิ่งละเอียด ยิ่งตรง)</span></label>
+            <textarea id="metaAiCharDesc" class="input-select" rows="3" placeholder="เช่น: ผู้หญิงผมยาวสีดำ ผิวขาว หน้ากลม ตาโต ริมฝีปากบาง ใส่เสื้อยืดสีขาว กางเกงยีนส์" style="font-size:11px;resize:vertical;"></textarea>
+            <div style="font-size:9px;color:var(--text-dim);margin-top:2px;">💡 กรอกลักษณะตัวละครของคุณให้ละเอียด (ทรงผม สีผม ลักษณะหน้า ผิว ชุด) Meta AI จะสร้างให้ตรงมากขึ้น</div>
+          </div>
+        </div>
+        <div class="form-row" style="margin-top:6px;">
+          <label>จำนวนคลิปต่อสินค้า (Variations)</label>
+          <select id="metaAiClipsPerProduct" class="input-select">
+            <option value="1" selected>1 คลิป / สินค้า</option>
+            <option value="2">2 คลิป / สินค้า</option>
+            <option value="3">3 คลิป / สินค้า</option>
+            <option value="5">5 คลิป / สินค้า (5 มุมมอง ครบเครื่อง)</option>
+          </select>
+        </div>
+        <div id="metaAiModeNote" style="font-size:10px;color:var(--text-dim);margin-top:4px;line-height:1.4;">
+          🧑 <b>อินฟลูฯ</b>: ตัวละครถือสินค้าจริง 3D (ต้องอัปโหลดรูปตัวละคร) &nbsp;|&nbsp; ✋ <b>มือ</b>: มือถือสินค้า + รอยสัก
+        </div>
+      </div>
+    </section>
+
+    <!-- Model Settings -->
+    <section class="card">
+      <h3 class="card-title">⚙️ ตั้งค่าโมเดล</h3>
+      <div class="form-row"><label>โมเดลภาพนิ่ง (9:16 แนวตั้ง)</label><select id="factoryImageModel" class="input-select">
+        <option value="🍌 Nano Banana 2.1" selected>🍌 Nano Banana 2.1 (ใหม่ล่าสุด แนะนำ)</option>
+        <option value="🍌 Nano Banana Pro">🍌 Nano Banana Pro (9:16 แนวตั้ง)</option>
+        <option value="🍌 Nano Banana 2">🍌 Nano Banana 2</option>
+        <option value="🍌 Nano Banana 2 Lite">🍌 Nano Banana 2 Lite</option>
+      </select></div>
+      <div class="form-row"><label>โมเดลวีดีโอ</label><select id="factoryVideoModel" class="input-select">
+        <option value="Omni 1.1 Flash">Omni 1.1 Flash</option>
+        <option value="Veo 3.1 - Lite">Veo 3.1 - Lite</option>
+        <option value="Veo 3.1 - Fast">Veo 3.1 - Fast</option>
+        <option value="Veo 3.1 - Lite [Lower Priority]" selected>Veo 3.1 - Lite [ฟรี]</option>
+        <option value="Veo 3.1 - Quality">Veo 3.1 - Quality</option>
+      </select></div>
+      <div style="display:flex;gap:8px;">
+        <div class="form-row" style="flex:1;"><label>ความยาว (วินาที)</label><select id="factoryDuration" class="input-select">
+          <option value="4">4 วินาที</option>
+          <option value="6">6 วินาที</option>
+          <option value="8" selected>8 วินาที</option>
+          <option value="10">10 วินาที</option>
+        </select></div>
+        <div class="form-row" style="flex:1;"><label>จำนวนฉาก</label><select id="factorySceneCount" class="input-select">
+          <option value="1" selected>1 ฉาก</option>
+          <option value="2">2 ฉาก</option>
+          <option value="3">3 ฉาก</option>
+          <option value="4">4 ฉาก</option>
+          <option value="5">5 ฉาก</option>
+        </select></div>
+      </div>
+      <div class="form-row"><label>จำนวนไอเดีย</label><select id="factoryIdeaCount" class="input-select">
+        <option value="1" selected>1 ไอเดีย</option>
+        <option value="2">2 ไอเดีย</option>
+        <option value="3">3 ไอเดีย</option>
+        <option value="5">5 ไอเดีย</option>
+        <option value="10">10 ไอเดีย</option>
+      </select></div>
+    </section>
+
+    <!-- Content & Script Style -->
+    <section class="card">
+      <h3 class="card-title">🎭 สไตล์คอนเทนต์ / โทนวิดีโอ</h3>
+      <div class="form-row">
+        <label>แนวการเล่าเรื่องของ AI</label>
+        <select id="factoryContentStyle" class="input-select" style="font-size:12px;padding:6px 10px;">
+          <option value="influencer_review" selected>🛍️ รีวิวป้ายยาไม่อวย (Real Influencer Review) — แนะนำ</option>
+          <option value="viral_hook">🔥 ไวรัลเปิดหัวแรง หยุดนิ้วโป้ง (Viral Hook)</option>
+          <option value="problem_solver">📖 สตอรี่แก้ปัญหาชีวิต (Storytelling / Pain Point)</option>
+          <option value="hot_deal">💥 โปรเด็ด แจกพิกัดราคาโดน (Hot Deal / Price Drop)</option>
+          <option value="pro_showcase">✨ โฆษณาพรีเมียม ทางการ (Professional Showcase)</option>
+        </select>
+      </div>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:4px;">
+        💡 AI จะปรับ Prompt และบทพูดให้เข้ากับสไตล์ที่เลือกโดยอัตโนมัติ
+      </div>
+    </section>
+
+    <!-- Auto-Post Target Setting -->
+    <section class="card">
+      <h3 class="card-title">🎯 เป้าหมายการโพสต์หลังผลิตเสร็จ</h3>
+      <div class="form-row">
+        <select id="factoryPostTargetSelect" class="input-select" style="font-size:12px;padding:8px 10px;font-weight:600;">
+          <option value="vault_only" selected>💾 เก็บในคลัง (Vault Only - ตรวจสอบก่อนโพสต์)</option>
+          <option value="cloud_sync">☁️ ส่งเข้ามือถืออัตโนมัติ (PUP PAP POST)</option>
+          <option value="tiktok_now">🎵 โพสต์ TikTok Shop ทันที</option>
+          <option value="shopee_now">🛒 โพสต์ Shopee Video ทันที</option>
+          <option value="reels_now">🎬 โพสต์ Facebook Reels ทันที</option>
+          <option value="queue_schedule">⏳ เข้าคิว / ตั้งเวลาโพสต์รวม</option>
+        </select>
+      </div>
+      <div id="factoryScheduleBox" class="hidden" style="margin-top:6px;padding:8px;background:var(--bg-deep);border-radius:8px;">
+        <label style="font-size:10px;color:var(--text-dim);display:block;margin-bottom:4px;">⏰ ระยะห่างระหว่างโพสต์ในคิว</label>
+        <select id="factoryQueueInterval" class="input-select" style="font-size:11px;padding:4px;">
+          <option value="5">ทุก 5 นาที</option>
+          <option value="15" selected>ทุก 15 นาที</option>
+          <option value="30">ทุก 30 นาที</option>
+          <option value="60">ทุก 1 ชั่วโมง</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- One-Click Auto-Pilot Button -->
+    <section class="card" style="text-align:center;padding:14px 12px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.3);">
+      <button id="btnOneClickAutoPilot" class="btn btn-primary btn-lg" type="button" style="width:100%;font-size:14px;font-weight:800;padding:12px;background:linear-gradient(135deg, #10b981, #059669);box-shadow:0 4px 14px rgba(16,185,129,0.35);border:none;cursor:pointer;letter-spacing:0.3px;">
+        🚀 เดินเครื่องอัตโนมัติ (One-Click Auto-Pilot)
+      </button>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:8px;line-height:1.4;">
+        ⚡ กดปุ่มเดียว: คิดไอเดีย → เขียนบท → ผลิตวิดีโอบน Flow → ส่งโพสต์อัตโนมัติครบทุกสเต็ป
+      </div>
+
+      <!-- Advanced Manual Controls -->
+      <details style="margin-top:12px;text-align:left;border-top:1px solid var(--border);padding-top:8px;">
+        <summary style="font-size:11px;color:var(--text-dim);cursor:pointer;">🛠️ แมนนวล / สั่งงานทีละขั้นตอน (ตัวเลือกเพิ่มเติม)</summary>
+        <div style="margin-top:8px;">
+          <div style="display:flex;gap:6px;margin-bottom:8px;">
+            <button id="btnBrainstorm" class="btn btn-secondary" type="button" style="flex:1;font-size:11px;">💡 คิดไอเดีย</button>
+            <button id="btnTriggerFlowBrainstorm" class="btn btn-outline" type="button" style="font-size:10px;border-color:#3b82f6;color:#60a5fa;" title="สั่ง Brainstorm ใน Tool">⚡ Tool Brainstorm</button>
+          </div>
+          <div id="ideaBank" class="hidden" style="margin-bottom:12px;"></div>
+          <div style="display:flex;gap:6px;">
+            <button id="btnStartFactory" class="btn btn-primary" type="button" style="flex:1;font-size:11px;">🚀 เริ่มผลิต PhimBot</button>
+            <button id="btnTriggerFlowStartFactory" class="btn btn-primary" type="button" style="font-size:11px;background:#2563eb;" title="สั่ง Start ใน Tool">⚡ Start ใน Tool</button>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <!-- Production Monitor -->
+    <section id="factoryMonitor" class="card hidden">
+      <h3 class="card-title">🎬 Production Monitor</h3>
+      <div style="display:flex;gap:12px;margin-bottom:8px;">
+        <div style="flex:1;text-align:center;">
+          <div style="font-size:10px;color:var(--text-dim);">สินค้า</div>
+          <div id="monProduct" style="font-size:16px;font-weight:800;">0/0</div>
+        </div>
+        <div style="flex:1;text-align:center;">
+          <div style="font-size:10px;color:var(--text-dim);">ไอเดีย</div>
+          <div id="monIdea" style="font-size:16px;font-weight:800;">0/0</div>
+        </div>
+        <div style="flex:1;text-align:center;">
+          <div style="font-size:10px;color:var(--text-dim);">ฉาก</div>
+          <div id="monScene" style="font-size:16px;font-weight:800;">0/0</div>
+        </div>
+      </div>
+      <div style="background:var(--bg-card);border-radius:8px;height:8px;overflow:hidden;margin-bottom:8px;">
+        <div id="monProgressBar" style="height:100%;background:var(--accent);width:0%;transition:width 0.3s;"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div id="monAnchorPreview" style="width:60px;height:106px;border-radius:8px;background:var(--bg-card);overflow:hidden;flex-shrink:0;"></div>
+        <div id="monVideoPreview" style="flex:1;aspect-ratio:9/16;max-height:200px;border-radius:8px;background:var(--bg-card);overflow:hidden;"></div>
+      </div>
+      <div id="monLog" style="max-height:120px;overflow-y:auto;font-size:10px;color:var(--text-dim);background:var(--bg-deep);border-radius:8px;padding:8px;font-family:monospace;"></div>
+      <div id="factoryMonitorActions" style="margin-top:8px;">
+        <button id="btnAbortFactory" class="btn btn-outline" type="button" style="width:100%;color:#ef4444;border-color:#ef4444;">⛔ หยุดการผลิต</button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ─── Tab: Vault (คลังวีดีโอ) ─────────────────────────── -->
+  <main class="tab-content" id="tab-vault">
+    <section class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <h3 class="card-title" style="margin:0;">💾 คลังวีดีโอ (Media Vault)</h3>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span id="vaultCount" style="font-size:11px;color:var(--text-dim);">0 รายการ</span>
+          <button id="btnSyncFlowVideos" class="btn btn-outline" style="font-size:10px;padding:3px 8px;border-color:var(--primary);color:var(--primary);cursor:pointer;" title="ดึงคลิปที่สร้างเสร็จจาก Google Flow Tool เข้าคลัง">📥 ดึงคลิปจาก Flow Tool</button>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--text-dim);margin-top:4px;">วีดีโอที่เจนเสร็จจะเก็บไว้ที่นี่ แยกตามแพลตฟอร์ม TikTok และ Shopee ชัดเจน</p>
+    </section>
+
+    <!-- Filter -->
+    <section class="card" style="padding:6px 10px;">
+      <div style="display:flex;gap:4px;flex-wrap:wrap;">
+        <button class="btn vault-filter-btn active" data-filter="all" style="flex:1;font-size:10px;padding:4px;min-width:44px;">ทั้งหมด</button>
+        <button class="btn vault-filter-btn" data-filter="tiktok" style="flex:1;font-size:10px;padding:4px;min-width:56px;color:#22c55e;">🎵 TikTok</button>
+        <button class="btn vault-filter-btn" data-filter="shopee" style="flex:1;font-size:10px;padding:4px;min-width:56px;color:#ee4d2d;">🛍️ Shopee</button>
+        <button class="btn vault-filter-btn" data-filter="unposted" style="flex:1;font-size:10px;padding:4px;min-width:54px;">ยังไม่โพสต์</button>
+        <button class="btn vault-filter-btn" data-filter="posted" style="flex:1;font-size:10px;padding:4px;min-width:50px;">โพสต์แล้ว</button>
+      </div>
+    </section>
+
+    <!-- Batch Selection Bar -->
+    <section id="vaultBatchBar" class="card" style="padding:8px 10px;margin-bottom:8px;background:var(--bg-card);border:1.5px solid var(--border);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="vaultSelectAllToggle" style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
+          <label for="vaultSelectAllToggle" style="font-size:11px;font-weight:700;cursor:pointer;user-select:none;">เลือก (<span id="vaultSelectedCount">0</span>)</label>
+          <button id="btnVaultSelectUnposted" class="btn btn-outline" type="button" style="font-size:10px;padding:2px 6px;">เฉพาะยังไม่โพสต์</button>
+          <button id="btnVaultClearSelect" class="btn btn-outline" type="button" style="font-size:10px;padding:2px 6px;">ล้าง</button>
+        </div>
+        <button id="btnVaultBatchSchedule" class="btn btn-primary btn-sm" type="button" disabled style="font-size:11px;padding:5px 10px;font-weight:700;display:flex;align-items:center;gap:4px;box-shadow:var(--shadow);">
+          ⏰ ตั้งเวลาโพสต์ TikTok ที่เลือก
+        </button>
+      </div>
+    </section>
+
+    <!-- Video Grid -->
+    <div id="vaultGrid" style="display:flex;flex-direction:column;gap:8px;padding:0 4px;"></div>
+
+    <!-- Empty State -->
+    <div id="vaultEmpty" style="text-align:center;padding:40px 20px;color:var(--text-dim);">
+      <div style="font-size:48px;margin-bottom:12px;">🎬</div>
+      <p style="font-size:13px;font-weight:600;">ยังไม่มีวีดีโอในคลัง</p>
+      <p style="font-size:11px;margin-top:4px;">ไปที่แท็บ "โรงงาน" เพื่อเริ่มสร้างวีดีโอโฆษณา AI</p>
+    </div>
+  </main>
+
+  <!-- ─── Shopee Product Selection Modal (Global for FB Reels & Shopee Video) ────────────────── -->
+  <div id="fbReelsProductModal" class="hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;">
+    <div style="background:#1e1e1e;border-radius:12px;width:100%;max-width:400px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.1);display:flex;justify-content:space-between;align-items:center;">
+        <h3 id="productModalHeaderTitle" style="margin:0;font-size:15px;">🛒 เลือกสินค้า Shopee</h3>
+        <button id="btnCloseProductModal" type="button" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;padding:0 4px;">✕</button>
+      </div>
+      <!-- Tab buttons -->
+      <div style="display:flex;border-bottom:1px solid rgba(255,255,255,.1);">
+        <button class="product-modal-tab active" data-pm-tab="saved" type="button" style="flex:1;padding:10px 8px;background:none;border:none;color:#10b981;cursor:pointer;font-size:12px;border-bottom:2px solid #10b981;font-weight:bold;">⭐ คลังพร้อมลิงก์ (<span id="pmSavedCount">0</span>)</button>
+        <button class="product-modal-tab" data-pm-tab="scanned" type="button" style="flex:1;padding:10px 8px;background:none;border:none;color:#888;cursor:pointer;font-size:12px;border-bottom:2px solid transparent;">📋 ผลสแกนล่าสุด</button>
+        <button class="product-modal-tab" data-pm-tab="url" type="button" style="padding:10px 12px;background:none;border:none;color:#888;cursor:pointer;font-size:12px;border-bottom:2px solid transparent;">🔗 วาง URL</button>
+      </div>
+      <!-- Saved Catalog Tab (Active by default) -->
+      <div id="productModalSavedTab" style="padding:14px 16px;overflow-y:auto;max-height:55vh;">
+        <div id="productModalSavedList" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+      <!-- Scanned products tab -->
+      <div id="productModalScannedTab" class="hidden" style="padding:14px 16px;overflow-y:auto;max-height:55vh;">
+        <div id="productModalScannedList" style="display:flex;flex-direction:column;gap:8px;">
+          <p style="text-align:center;opacity:.5;font-size:13px;">ยังไม่มีสินค้า ไปสแกนที่แท็บ Shopee ก่อน</p>
+        </div>
+      </div>
+      <!-- URL tab -->
+      <div id="productModalUrlTab" class="hidden" style="padding:14px 16px;">
+        <div style="display:flex;gap:6px;">
+          <input id="productModalUrlInput" class="input" type="text" placeholder="วาง URL สินค้า Shopee..." style="flex:1;">
+          <button id="btnProductModalFetch" class="btn btn-primary btn-sm" type="button">ดึง</button>
+        </div>
+        <div id="productModalUrlResult" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Product Selection Modal ────────────────────────────────── -->
+  <div id="productModal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-header-icon">🛒</div>
+        <div class="modal-header-text">
+          <h2 class="modal-title">เลือกสินค้า</h2>
+          <p class="modal-desc">ติ๊ก (หรือ กดค้างแล้วลาก) สินค้าที่จะปักลงตะกร้า — เลือกได้หลายชิ้น (1 คลิป/สินค้า) - แตะรูปเพื่อดูใหญ่</p>
+        </div>
+      </div>
+      <div class="modal-search">
+        <span class="modal-search-icon">🔍</span>
+        <input id="modalProductSearch" class="modal-search-input" placeholder="ค้นหาชื่อสินค้า...">
+      </div>
+      <div class="modal-counter-bar">
+        <span id="modalSelectedCount" class="modal-counter-text">เลือก 0 / 0</span>
+        <div class="modal-counter-actions">
+          <button id="modalSelectAll" class="btn-link" type="button">เลือกทั้งหมด</button>
+          <button id="modalClearAll" class="btn-link" type="button">ล้าง</button>
+        </div>
+      </div>
+      <div class="modal-filters">
+        <label class="filter-chip"><input type="radio" name="modalFilter" value="all" checked><span>ทั้งหมด</span></label>
+        <label class="filter-chip"><input type="radio" name="modalFilter" value="hide_posted"><span>ซ่อนสินค้าที่เคยสร้างแล้ว (<span class="posted-count">0</span>)</span></label>
+        <label class="filter-chip"><input type="radio" name="modalFilter" value="only_posted"><span>เฉพาะสินค้าที่สร้างแล้ว (<span class="posted-count">0</span>)</span></label>
+      </div>
+      <div id="modalProductGrid" class="modal-product-grid"></div>
+      <div class="modal-footer">
+        <button id="modalCancel" class="btn btn-outline" type="button">ยกเลิก</button>
+        <button id="modalConfirm" class="btn btn-primary" type="button">เลือก</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Vault Batch Schedule Modal ────────────────────────────── -->
+  <div id="vaultScheduleModal" class="modal-overlay hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">
+    <div class="modal-box" style="max-width:380px;width:100%;background:var(--bg-card);border:1.5px solid var(--border);border-radius:16px;overflow:hidden;display:flex;flex-direction:column;max-height:90vh;box-shadow:var(--shadow-lg);animation:fadeIn 0.2s ease;">
+      <div style="padding:14px 16px;border-bottom:1.5px solid var(--border);background:var(--bg-card);">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <h3 class="card-title" style="margin:0;font-size:13px;display:flex;align-items:center;gap:6px;">
+            <span>⏰</span> ตั้งเวลาโพสต์ TikTok แบบกลุ่ม
+          </h3>
+          <button id="btnCancelBatchScheduleX" class="btn-icon" type="button" style="font-size:14px;color:var(--text-dim);cursor:pointer;">✕</button>
+        </div>
+        <p style="font-size:11px;color:var(--text-dim);margin:4px 0 0 0;">กระจายเวลาโพสต์อัตโนมัติ สำหรับ <strong id="vBatchCountDisplay" style="color:var(--accent);">0</strong> คลิปที่เลือก</p>
+      </div>
+      <div style="overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px;flex:1;">
+        <!-- Publish mode -->
+        <div class="form-row">
+          <label style="font-size:11px;font-weight:600;">วิธีลงคลิป</label>
+          <select id="vBatchPublishMode" class="input-select" style="font-size:11px;">
+            <option value="scheduled" selected>ตั้งเวลาโพสต์ (Scheduled)</option>
+            <option value="now">โพสต์ทันที (Post Now)</option>
+            <option value="draft">บันทึกร่าง (Save Draft)</option>
+            <option value="private">โพสต์ส่วนตัว (Private)</option>
+          </select>
+        </div>
+
+        <div id="vBatchScheduleFields">
+          <!-- Start Date -->
+          <div class="form-row">
+            <label style="font-size:11px;font-weight:600;">วันที่เริ่มโพสต์</label>
+            <input id="vBatchDate" class="input" type="date" style="font-size:11px;">
+          </div>
+          <!-- Start Time -->
+          <div class="form-row">
+            <label style="font-size:11px;font-weight:600;">เวลาเริ่มโพสต์</label>
+            <input id="vBatchTime" class="input" type="time" step="300" style="font-size:11px;">
+          </div>
+          <!-- Interval -->
+          <div class="form-row">
+            <label style="font-size:11px;font-weight:600;">ระยะห่างระหว่างคลิป</label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input id="vBatchIntervalVal" class="input" type="number" min="5" value="30" style="width:70px;font-size:11px;text-align:center;">
+              <select id="vBatchIntervalUnit" class="input-select" style="width:85px;font-size:11px;">
+                <option value="minutes" selected>นาที</option>
+                <option value="hours">ชั่วโมง</option>
+              </select>
+            </div>
+          </div>
+          <!-- Interval Quick Presets -->
+          <div style="display:flex;gap:4px;margin-top:-4px;margin-bottom:4px;">
+            <button type="button" class="btn btn-outline v-interval-preset" data-val="15" data-unit="minutes" style="flex:1;font-size:9px;padding:3px 2px;">15 น.</button>
+            <button type="button" class="btn btn-outline v-interval-preset active" data-val="30" data-unit="minutes" style="flex:1;font-size:9px;padding:3px 2px;">30 น.</button>
+            <button type="button" class="btn btn-outline v-interval-preset" data-val="1" data-unit="hours" style="flex:1;font-size:9px;padding:3px 2px;">1 ชม.</button>
+            <button type="button" class="btn btn-outline v-interval-preset" data-val="2" data-unit="hours" style="flex:1;font-size:9px;padding:3px 2px;">2 ชม.</button>
+          </div>
+          <!-- Variation / Jitter -->
+          <div class="form-row" title="สุ่มเวลาเล็กน้อยให้ดูเป็นธรรมชาติ ป้องกันระบบตรวจจับ">
+            <label style="font-size:11px;font-weight:600;">สุ่มเวลา (Jitter)</label>
+            <select id="vBatchVariation" class="input-select" style="font-size:11px;">
+              <option value="0">ไม่สุ่ม (เวลาเป๊ะ)</option>
+              <option value="3">±3 นาที</option>
+              <option value="5" selected>±5 นาที (แนะนำ)</option>
+              <option value="10">±10 นาที</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Live Timeline Preview -->
+        <div style="margin-top:6px;background:var(--bg-hover);border:1px solid var(--border-light);border-radius:10px;padding:10px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-primary);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;">
+            <span>📅 ไทม์ไลน์การโพสต์ (Timeline Preview)</span>
+            <span id="vBatchTimelineSummary" style="font-size:10px;color:var(--accent);font-weight:600;"></span>
+          </div>
+          <div id="vBatchTimelineList" style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:5px;font-size:10px;">
+          </div>
+        </div>
+      </div>
+      <div style="padding:12px 16px;border-top:1.5px solid var(--border);background:var(--bg-card);display:flex;gap:8px;">
+        <button id="btnCancelBatchSchedule" class="btn btn-outline" type="button" style="flex:0.7;font-size:12px;">ยกเลิก</button>
+        <button id="btnConfirmBatchSchedule" class="btn btn-primary" type="button" style="flex:1.3;font-size:12px;font-weight:700;">🚀 ยืนยันบรรจุเข้าคิว (<span id="vBatchConfirmCount">0</span> คลิป)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="scripts/i18n.js"></script>
+  <script src="scripts/ai-helper.js"></script>
+  <script src="scripts/clip-sync.js"></script>
+  <script src="sidepanel.js"></script>
+  <script src="scripts/video-factory.js"></script>
+</body>
+</html>

@@ -1,0 +1,3870 @@
+/**
+ * PhimBot — Video Factory & Media Vault Logic
+ * Handles AI brainstorming, script writing, Google Flow login, and Media Vault
+ */
+(function () {
+  'use strict';
+
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => document.querySelectorAll(sel);
+  function sendMsg(type, payload) { return new Promise((r) => chrome.runtime.sendMessage({ type, payload }, (res) => r(res || {}))); }
+  function showToast(msg, dur = 3000) { const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden'); setTimeout(() => t.classList.add('hidden'), dur); }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     STATE
+     ═══════════════════════════════════════════════════════════════════════ */
+  let factoryProducts = [];          // สินค้าที่อยู่ในคิวผลิต
+  let factoryCharImages = [];        // รูปตัวละคร Reference (base64)
+  window.__phimbotFactoryProducts = factoryProducts;
+  window.__phimbotFactoryCharImages = factoryCharImages;
+  let factoryIdeas = [];             // ไอเดียที่ AI คิดได้
+  let factoryScripts = {};           // บทต่อไอเดีย { ideaIdx: scenes[] }
+  let factoryMode = 'influencer';    // 'influencer' | 'hands'
+  let factoryVoice = 'female';       // 'female' | 'male'
+  let isFactoryBusy = false;
+  let isFactoryAborted = false;
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     INIT — Tab switching hook
+     ═══════════════════════════════════════════════════════════════════════ */
+  // Hook into existing tab switching — refresh vault/factory when switching to those tabs
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    if (btn.dataset.tab === 'vault') refreshVault();
+    if (btn.dataset.tab === 'factory') checkFlowLogin();
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     GOOGLE FLOW LOGIN
+     ═══════════════════════════════════════════════════════════════════════ */
+  async function checkFlowLogin() {
+    const dot = $('#flowStatusDot');
+    const txt = $('#flowStatusText');
+    if (!dot || !txt) return;
+    const res = await sendMsg('PHIMBOT_CHECK_FLOW_LOGIN');
+    if (res.loggedIn) {
+      dot.style.background = '#22c55e';
+      txt.textContent = 'Google Flow: พร้อมใช้งาน ✓';
+    } else {
+      dot.style.background = '#ef4444';
+      txt.textContent = 'Google Flow: ยังไม่ได้ล็อกอิน';
+    }
+  }
+
+  $('#btnLoginFlow')?.addEventListener('click', async () => {
+    await sendMsg('PHIMBOT_OPEN_FLOW_LOGIN');
+    showToast('กำลังเปิด Google Flow — กรุณาล็อกอิน Google Account');
+    // Re-check after a delay
+    setTimeout(() => checkFlowLogin(), 5000);
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     ENGINE SELECTOR — สลับ Meta AI / Google Flow UI
+     ═══════════════════════════════════════════════════════════════════════ */
+  $('#factoryVideoEngine')?.addEventListener('change', (e) => {
+    const engine = e.target.value;
+    const metaBox = $('#metaAiPromptBox');
+    // Model Settings section ที่มี #factoryImageModel คือ section ถัดจาก engine selector
+    const modelSection = $('#factoryImageModel')?.closest('section.card');
+    // ปุ่ม Flow-specific: Clear Flow Queue, Start ใน Tool, Tool Brainstorm
+    const flowBtns = [
+      $('#btnFactoryClearFlowQueue'),
+      $('#btnTriggerFlowStartFactory'),
+      $('#btnTriggerFlowBrainstorm')
+    ];
+
+    if (engine === 'meta_ai') {
+      if (metaBox) metaBox.classList.remove('hidden');
+      if (modelSection) modelSection.style.display = 'none';
+      flowBtns.forEach(b => { if (b) b.style.display = 'none'; });
+    } else {
+      if (metaBox) metaBox.classList.add('hidden');
+      if (modelSection) modelSection.style.display = '';
+      flowBtns.forEach(b => { if (b) b.style.display = ''; });
+    }
+  });
+
+  $('#btnClearFlowCache')?.addEventListener('click', async () => {
+    const btn = $('#btnClearFlowCache');
+    if (!btn) return;
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '⏳ กำลังล้าง...';
+    showToast('🧹 กำลังล้างแคช Google Flow...');
+    try {
+      const res = await sendMsg('PHIMBOT_CLEAR_FLOW_SITE_DATA');
+      if (res?.ok || res?.success) {
+        showToast('✅ ล้างแคช Google Flow สำเร็จ!');
+        if (typeof addMonitorLog === 'function') {
+          addMonitorLog('🧹 ล้างแคช IndexedDB และ Service Worker ของ Google Flow เรียบร้อย');
+        }
+        await checkFlowLogin();
+      } else {
+        const err = res?.error || res?.reason || 'เกิดข้อผิดพลาด';
+        showToast(`❌ ล้างแคชไม่สำเร็จ: ${err}`);
+      }
+    } catch (e) {
+      showToast(`❌ ล้างแคชผิดพลาด: ${e.message}`);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     FACTORY — Product Queue
+     ═══════════════════════════════════════════════════════════════════════ */
+  function renderFactoryProducts() {
+    const container = $('#factoryProductQueue');
+    if (!container) return;
+    container.innerHTML = '';
+    if (factoryProducts.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:8px;">ยังไม่มีสินค้า — กดปุ่มด้านล่างเพื่อเพิ่ม</div>';
+      return;
+    }
+    factoryProducts.forEach((p, idx) => {
+      const chip = document.createElement('div');
+      chip.style.cssText = 'display:flex;align-items:center;gap:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:4px 10px 4px 4px;font-size:11px;';
+      const imgSrc = p.images?.[0] || p.imageUrl || '';
+      if (imgSrc) {
+        const img = document.createElement('img');
+        img.src = imgSrc;
+        img.style.cssText = 'width:24px;height:24px;border-radius:50%;object-fit:cover;';
+        chip.appendChild(img);
+      }
+      const name = document.createElement('span');
+      name.textContent = p.name?.substring(0, 20) || 'สินค้า';
+      name.style.cssText = 'max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      chip.appendChild(name);
+      const del = document.createElement('span');
+      del.textContent = '✕';
+      del.style.cssText = 'cursor:pointer;color:var(--text-dim);margin-left:4px;font-size:10px;';
+      del.onclick = () => { factoryProducts.splice(idx, 1); renderFactoryProducts(); };
+      chip.appendChild(del);
+      container.appendChild(chip);
+    });
+  }
+
+  $('#btnAddFactoryProduct')?.addEventListener('click', async () => {
+    const source = $('#factoryProductSource')?.value || 'tiktok';
+    let products = [];
+
+    if (source === 'shopee') {
+      // ดึงสินค้า Shopee ผ่าน background (รวมผลสแกน + ประวัติ)
+      const res = await sendMsg('PHIMBOT_GET_SHOPEE_PRODUCTS');
+      products = res.products || [];
+      console.log('[Factory] Shopee products:', products.length, 'items');
+    } else {
+      // ดึงสินค้า TikTok
+      const res = await sendMsg('PHIMBOT_GET_PRODUCTS');
+      products = (res.products || []).map(p => ({ ...p, platform: 'tiktok' }));
+    }
+
+    if (products.length === 0) {
+      const tabName = source === 'shopee' ? 'Shopee' : 'TikTok';
+      showToast(`ยังไม่มีสินค้า${tabName}ในคลัง — ไปแท็บ "${tabName}" เพื่อดึงสินค้าก่อน`);
+      return;
+    }
+    showFactoryProductPicker(products, source);
+  });
+
+  function showFactoryProductPicker(products, source = 'tiktok') {
+    // Create a lightweight modal
+    let modal = $('#factoryProductModal');
+    if (modal) modal.remove();
+
+    const platformIcon = source === 'shopee' ? '🛒' : '🎵';
+    const platformName = source === 'shopee' ? 'Shopee' : 'TikTok';
+
+    modal = document.createElement('div');
+    modal.id = 'factoryProductModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--bg-panel);border-radius:16px;max-height:80vh;width:100%;max-width:400px;overflow:hidden;display:flex;flex-direction:column;';
+
+    // Header
+    box.innerHTML = `<div style="padding:16px;border-bottom:1.5px solid var(--border);">
+      <h3 style="margin:0;font-size:14px;font-weight:700;">${platformIcon} เลือกสินค้า ${platformName} สำหรับผลิตวีดีโอ</h3>
+      <input id="factoryPickerSearch" style="width:100%;margin-top:8px;padding:8px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-card);color:var(--text-primary);font-size:12px;" placeholder="🔍 ค้นหาชื่อสินค้า...">
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <button id="factoryPickerAddAll" class="btn btn-secondary btn-sm" type="button" style="flex:1;font-size:11px;padding:5px 8px;">+ ทั้งหมด (<span id="factoryPickerUnaddedCount">0</span>)</button>
+        <button id="factoryPickerAdd5" class="btn btn-secondary btn-sm" type="button" style="font-size:11px;padding:5px 8px;">+ 5 ชิ้น</button>
+        <button id="factoryPickerAdd10" class="btn btn-secondary btn-sm" type="button" style="font-size:11px;padding:5px 8px;">+ 10 ชิ้น</button>
+      </div>
+    </div>`;
+
+    // Product list
+    const list = document.createElement('div');
+    list.style.cssText = 'overflow-y:auto;flex:1;padding:8px;';
+
+    const existingIds = new Set(factoryProducts.map(p => p.productId || p.id));
+
+    const renderList = (filter = '') => {
+      list.innerHTML = '';
+      const filtered = filter ? products.filter(p => (p.name || '').toLowerCase().includes(filter.toLowerCase())) : products;
+      const unaddedCount = filtered.filter(p => !existingIds.has(p.productId || p.id)).length;
+      const countEl = modal.querySelector('#factoryPickerUnaddedCount');
+      if (countEl) countEl.textContent = unaddedCount;
+
+      filtered.forEach(p => {
+        const isAdded = existingIds.has(p.productId || p.id);
+        const row = document.createElement('div');
+        row.style.cssText = `display:flex;align-items:center;gap:8px;padding:8px;border-radius:12px;cursor:${isAdded ? 'default' : 'pointer'};opacity:${isAdded ? '0.4' : '1'};margin-bottom:6px;background:var(--bg-card);border:1.5px solid var(--border);`;
+        row.innerHTML = `
+          ${(p.images?.[0] || p.imageUrl) ? `<img src="${p.images?.[0] || p.imageUrl}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;">` : '<div style="width:40px;height:40px;border-radius:8px;background:var(--border);"></div>'}
+          <div style="flex:1;overflow:hidden;">
+            <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary);">${p.name || 'ไม่มีชื่อ'}</div>
+            <div style="font-size:10px;color:var(--text-muted);">${p.price || ''}</div>
+          </div>
+          ${isAdded ? '<span style="font-size:10px;font-weight:600;color:var(--text-muted);">เพิ่มแล้ว</span>' : '<span style="font-size:16px;font-weight:700;color:var(--accent);">+</span>'}
+        `;
+        if (!isAdded) {
+          row.onclick = () => {
+            factoryProducts.push(p);
+            existingIds.add(p.productId || p.id);
+            renderFactoryProducts();
+            renderList(document.getElementById('factoryPickerSearch')?.value || '');
+            showToast(`เพิ่ม "${(p.name || '').substring(0, 20)}" เข้าคิวผลิต`);
+          };
+        }
+        list.appendChild(row);
+      });
+    };
+
+    const addBatch = (limit = 999) => {
+      const currentFilter = document.getElementById('factoryPickerSearch')?.value || '';
+      const filtered = currentFilter ? products.filter(p => (p.name || '').toLowerCase().includes(currentFilter.toLowerCase())) : products;
+      const unadded = filtered.filter(p => !existingIds.has(p.productId || p.id)).slice(0, limit);
+      if (unadded.length === 0) {
+        showToast('สินค้าที่เลือกถูกเพิ่มเข้าคิวหมดแล้ว');
+        return;
+      }
+      unadded.forEach(p => {
+        factoryProducts.push(p);
+        existingIds.add(p.productId || p.id);
+      });
+      renderFactoryProducts();
+      renderList(currentFilter);
+      showToast(`🎉 เพิ่มสินค้า ${unadded.length} รายการเข้าคิวผลิตเรียบร้อย!`);
+    };
+
+    renderList();
+    box.appendChild(list);
+
+    // Footer
+    const footer = document.createElement('div');
+    footer.style.cssText = 'padding:12px;border-top:1.5px solid var(--border);text-align:center;';
+    footer.innerHTML = '<button id="factoryPickerClose" class="btn btn-outline" style="width:100%;">ปิด</button>';
+    box.appendChild(footer);
+
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+
+    // Events
+    modal.querySelector('#factoryPickerSearch')?.addEventListener('input', (e) => renderList(e.target.value));
+    modal.querySelector('#factoryPickerAddAll')?.addEventListener('click', () => addBatch(999));
+    modal.querySelector('#factoryPickerAdd5')?.addEventListener('click', () => addBatch(5));
+    modal.querySelector('#factoryPickerAdd10')?.addEventListener('click', () => addBatch(10));
+    modal.querySelector('#factoryPickerClose')?.addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     FACTORY — Mode & Gender Switching (Synced + Persisted + Auto-Detect)
+     ═══════════════════════════════════════════════════════════════════════ */
+  let userManuallySelectedGender = false;
+
+  function setFactoryGenderUI(gender, saveStorage = true, syncFlow = true) {
+    const g = gender === 'male' ? 'male' : 'female';
+    factoryVoice = g;
+    window.__phimbotFactoryVoice = g;
+    $$('.factory-voice-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.voice === g);
+    });
+    const metaGenderEl = $('#metaAiCharGender');
+    if (metaGenderEl && metaGenderEl.value !== g) {
+      metaGenderEl.value = g;
+    }
+    if (saveStorage) {
+      try { chrome.storage.local.set({ phimbot_factory_voice_gender: g }); } catch (_) {}
+    }
+    if (syncFlow) {
+      sendMsg('PHIMBOT_SET_FLOW_GENDER', { gender: g }).catch(() => {});
+    }
+  }
+
+  // Restore saved gender preference on init
+  try {
+    chrome.storage.local.get(['phimbot_factory_voice_gender'], (res) => {
+      if (res?.phimbot_factory_voice_gender) {
+        setFactoryGenderUI(res.phimbot_factory_voice_gender, false, false);
+      }
+    });
+  } catch (_) {}
+
+  $$('.factory-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('.factory-mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      factoryMode = btn.dataset.mode;
+      const charSection = $('#factoryCharSection');
+      const voiceSection = $('#factoryVoiceSection');
+      // Always keep voice/gender section visible in BOTH influencer and hands modes
+      voiceSection?.classList.remove('hidden');
+      if (factoryMode === 'influencer') {
+        charSection?.classList.remove('hidden');
+        const infOpts = $('#metaAiInfluencerOpts');
+        if (infOpts) infOpts.style.display = '';
+      } else {
+        charSection?.classList.add('hidden');
+        const infOpts = $('#metaAiInfluencerOpts');
+        if (infOpts) infOpts.style.display = 'none';
+      }
+    });
+  });
+
+  $$('.factory-voice-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      userManuallySelectedGender = true;
+      setFactoryGenderUI(btn.dataset.voice, true, true);
+      const label = btn.dataset.voice === 'male' ? '👨 ชาย (ครับ)' : '👩 หญิง (ค่ะ)';
+      showToast(`ตั้งค่าเพศตัวละคร/เสียงพากย์: ${label}`);
+    });
+  });
+
+  $('#metaAiCharGender')?.addEventListener('change', (e) => {
+    userManuallySelectedGender = true;
+    setFactoryGenderUI(e.target.value, true, true);
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     FACTORY — Character Upload + Auto Gender Detection
+     ═══════════════════════════════════════════════════════════════════════ */
+  function renderCharGrid() {
+    const grid = $('#factoryCharGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    factoryCharImages.forEach((src, idx) => {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position:relative;border-radius:10px;overflow:hidden;aspect-ratio:1;background:var(--bg-card);border:2px solid var(--accent);';
+      const img = document.createElement('img');
+      img.src = src;
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+      wrap.appendChild(img);
+      const del = document.createElement('div');
+      del.textContent = '✕';
+      del.style.cssText = 'position:absolute;top:2px;right:4px;background:rgba(0,0,0,0.6);color:white;width:16px;height:16px;border-radius:50%;font-size:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+      del.onclick = () => { factoryCharImages.splice(idx, 1); renderCharGrid(); };
+      wrap.appendChild(del);
+      grid.appendChild(wrap);
+    });
+  }
+
+  $('#btnAddChar')?.addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.onchange = async () => {
+      for (const file of input.files) {
+        const base64 = await fileToBase64(file);
+        factoryCharImages.push(base64);
+      }
+      renderCharGrid();
+      showToast(`📷 เพิ่มรูปตัวละคร ${input.files.length} รูป — กำลังวิเคราะห์เพศอัตโนมัติ...`);
+      if (factoryCharImages[0]) {
+        try {
+          const det = await sendMsg('PHIMBOT_DETECT_CHARACTER_GENDER', { dataUrl: factoryCharImages[0] });
+          if (det?.ok && det.gender) {
+            window.__lastAnalyzedCharImg = factoryCharImages[0];
+            window.__lastAnalyzedCharGender = det.gender;
+            setFactoryGenderUI(det.gender, true, true);
+            showToast(det.gender === 'male'
+              ? '👨 ตรวจพบรูปผู้ชาย — ตั้งค่าเป็น "ชาย (ครับ)" อัตโนมัติ!'
+              : '👩 ตรวจพบรูปผู้หญิง — ตั้งค่าเป็น "หญิง (ค่ะ)" อัตโนมัติ!', 4000);
+          }
+        } catch (_) {}
+      }
+    };
+    input.click();
+  });
+
+  function fileToBase64(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     FACTORY — AI Brainstorm Ideas
+     ═══════════════════════════════════════════════════════════════════════ */
+  $('#btnBrainstorm')?.addEventListener('click', async () => {
+    if (factoryProducts.length === 0) {
+      showToast('กรุณาเพิ่มสินค้าก่อนคิดไอเดีย');
+      return;
+    }
+    if (isFactoryBusy) return;
+    isFactoryBusy = true;
+
+    const btn = $('#btnBrainstorm');
+    const ideaBank = $('#ideaBank');
+    const ideaCount = parseInt($('#factoryIdeaCount')?.value || '1', 10);
+    const product = factoryProducts[0]; // ใช้สินค้าแรกในคิวเป็น Reference
+
+    btn.disabled = true;
+    btn.innerHTML = '⏳ กำลังคิดไอเดีย...';
+
+    const res = await sendMsg('PHIMBOT_BRAINSTORM_ADS', {
+      productName: product.name || '',
+      keywords: product.keywords || product.description || '',
+      mode: factoryMode,
+      ideaCount
+    });
+
+    btn.disabled = false;
+    btn.innerHTML = '💡 ขั้นตอน 1: คิดไอเดียโฆษณา';
+    isFactoryBusy = false;
+
+    if (res.success && res.ideas) {
+      factoryIdeas = res.ideas;
+      renderIdeaBank();
+      showToast(`คิดไอเดียได้ ${res.ideas.length} รูปแบบ!`);
+    } else if (res.parseError) {
+      showToast('AI ตอบกลับแต่ parse ไม่ได้ — ลองใหม่');
+    } else {
+      showToast(res.error || 'เกิดข้อผิดพลาด');
+    }
+  });
+
+  function renderIdeaBank() {
+    const bank = $('#ideaBank');
+    if (!bank) return;
+    bank.classList.remove('hidden');
+    bank.innerHTML = '<h4 style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--accent);">💡 Idea Bank</h4>';
+
+    factoryIdeas.forEach((idea, idx) => {
+      const card = document.createElement('div');
+      card.style.cssText = 'background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer;transition:border-color 0.2s;';
+      card.dataset.ideaIdx = idx;
+
+      const isSelected = idea._selected;
+      if (isSelected) card.style.borderColor = 'var(--accent)';
+
+      card.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:8px;">
+          <input type="checkbox" ${isSelected ? 'checked' : ''} style="margin-top:2px;accent-color:var(--accent);" class="idea-check" data-idx="${idx}">
+          <div style="flex:1;">
+            <div style="font-size:12px;font-weight:700;margin-bottom:4px;">${idea.headline || 'ไม่มี Headline'}</div>
+            <div style="font-size:11px;color:var(--text-dim);">${idea.concept || ''}</div>
+          </div>
+          <button class="btn-idea-script" data-idx="${idx}" style="font-size:10px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);cursor:pointer;flex-shrink:0;">📝 ดูบท</button>
+        </div>
+        <div id="ideaScriptArea_${idx}" class="hidden" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;"></div>
+      `;
+
+      bank.appendChild(card);
+    });
+
+    // Event: checkbox toggle
+    bank.querySelectorAll('.idea-check').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        const idx = parseInt(e.target.dataset.idx);
+        factoryIdeas[idx]._selected = e.target.checked;
+        renderIdeaBank();
+      });
+    });
+
+    // Event: script button
+    bank.querySelectorAll('.btn-idea-script').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.idx);
+        await loadScript(idx);
+      });
+    });
+
+    // Summary
+    const selectedCount = factoryIdeas.filter(i => i._selected).length;
+    const summary = document.createElement('div');
+    summary.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding:8px;background:var(--bg-deep);border-radius:8px;font-size:11px;';
+    summary.innerHTML = `
+      <span>เลือกแล้ว <strong>${selectedCount}</strong> ไอเดีย</span>
+      <div style="display:flex;gap:6px;">
+        <button id="btnSelectAllIdeas" class="btn-link" style="font-size:10px;">เลือกทั้งหมด</button>
+        <button id="btnClearIdeas" class="btn-link" style="font-size:10px;">ล้าง</button>
+      </div>
+    `;
+    bank.appendChild(summary);
+
+    summary.querySelector('#btnSelectAllIdeas')?.addEventListener('click', () => {
+      factoryIdeas.forEach(i => i._selected = true);
+      renderIdeaBank();
+    });
+    summary.querySelector('#btnClearIdeas')?.addEventListener('click', () => {
+      factoryIdeas.forEach(i => i._selected = false);
+      renderIdeaBank();
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     FACTORY — Script Generation per Idea
+     ═══════════════════════════════════════════════════════════════════════ */
+  async function loadScript(ideaIdx) {
+    const area = $(`#ideaScriptArea_${ideaIdx}`);
+    if (!area) return;
+
+    // Toggle visibility
+    if (!area.classList.contains('hidden')) {
+      area.classList.add('hidden');
+      return;
+    }
+    area.classList.remove('hidden');
+
+    // Already loaded?
+    if (factoryScripts[ideaIdx]) {
+      renderScriptEditor(ideaIdx);
+      return;
+    }
+
+    // Generate script via AI
+    const idea = factoryIdeas[ideaIdx];
+    const product = factoryProducts[0];
+    const sceneCount = parseInt($('#factorySceneCount')?.value || '1', 10);
+
+    area.innerHTML = '<div style="text-align:center;padding:12px;font-size:11px;color:var(--text-dim);">⏳ กำลังเขียนบท...</div>';
+
+    const res = await sendMsg('PHIMBOT_WRITE_SCRIPT', {
+      headline: idea.headline,
+      concept: idea.concept,
+      sceneCount,
+      productName: product.name || '',
+      keywords: product.keywords || product.description || '',
+      mode: factoryMode,
+      voiceGender: factoryVoice
+    });
+
+    if (res.success && res.scenes) {
+      factoryScripts[ideaIdx] = res.scenes;
+      renderScriptEditor(ideaIdx);
+    } else {
+      area.innerHTML = `<div style="color:#ef4444;font-size:11px;padding:8px;">${res.error || 'เขียนบทไม่สำเร็จ'}</div>`;
+    }
+  }
+
+  function renderScriptEditor(ideaIdx) {
+    const area = $(`#ideaScriptArea_${ideaIdx}`);
+    if (!area) return;
+    const scenes = factoryScripts[ideaIdx] || [];
+
+    area.innerHTML = '<div style="font-size:11px;font-weight:600;margin-bottom:6px;">📝 บทแต่ละฉาก (แก้ไขได้)</div>';
+
+    scenes.forEach((scene, sIdx) => {
+      const sceneDiv = document.createElement('div');
+      sceneDiv.style.cssText = 'background:var(--bg-deep);border-radius:8px;padding:8px;margin-bottom:6px;';
+      sceneDiv.innerHTML = `
+        <div style="font-size:10px;font-weight:700;color:var(--accent);margin-bottom:4px;">ฉาก ${sIdx + 1}: ${scene.beat || ''}</div>
+        <label style="font-size:9px;color:var(--text-dim);display:block;margin-bottom:2px;">🎙️ บทพากย์</label>
+        <textarea class="script-edit" data-idea="${ideaIdx}" data-scene="${sIdx}" data-field="voiceover" style="width:100%;min-height:40px;padding:6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-size:11px;resize:vertical;">${scene.voiceover || ''}</textarea>
+        <label style="font-size:9px;color:var(--text-dim);display:block;margin-top:4px;margin-bottom:2px;">📺 ข้อความบนจอ</label>
+        <input class="script-edit" data-idea="${ideaIdx}" data-scene="${sIdx}" data-field="overlay" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-size:11px;" value="${scene.overlay || ''}">
+        <label style="font-size:9px;color:var(--text-dim);display:block;margin-top:4px;margin-bottom:2px;">🎨 Visual Prompt (อังกฤษ)</label>
+        <textarea class="script-edit" data-idea="${ideaIdx}" data-scene="${sIdx}" data-field="visual" style="width:100%;min-height:40px;padding:6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-size:11px;resize:vertical;">${scene.visual || ''}</textarea>
+      `;
+      area.appendChild(sceneDiv);
+    });
+
+    // Auto-save edits
+    area.querySelectorAll('.script-edit').forEach(el => {
+      el.addEventListener('input', (e) => {
+        const iIdx = parseInt(e.target.dataset.idea);
+        const sIdx = parseInt(e.target.dataset.scene);
+        const field = e.target.dataset.field;
+        if (factoryScripts[iIdx]?.[sIdx]) {
+          factoryScripts[iIdx][sIdx][field] = e.target.value;
+        }
+      });
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     AUTO-POST TARGET & ONE-CLICK AUTO-PILOT
+     ═══════════════════════════════════════════════════════════════════════ */
+  let factoryPostTarget = 'vault_only';
+  const VALID_POST_TARGETS = ['vault_only', 'cloud_sync', 'tiktok_now', 'shopee_now', 'reels_now', 'queue_schedule', 'post_now'];
+
+  // Toggle post target via dropdown (vault_only / cloud_sync / tiktok_now / shopee_now / reels_now / queue_schedule)
+  const postTargetSelect = $('#factoryPostTargetSelect');
+  if (postTargetSelect) {
+    // โหลดค่าจาก storage
+    chrome.storage.local.get(['phimbot_post_target'], (res) => {
+      const saved = res.phimbot_post_target;
+      if (saved && VALID_POST_TARGETS.includes(saved)) {
+        factoryPostTarget = saved === 'post_now' ? 'tiktok_now' : saved;
+        postTargetSelect.value = factoryPostTarget;
+      } else if (postTargetSelect.value) {
+        factoryPostTarget = postTargetSelect.value;
+      }
+      const schedBox = $('#factoryScheduleBox');
+      if (schedBox) {
+        if (factoryPostTarget === 'queue_schedule') schedBox.classList.remove('hidden');
+        else schedBox.classList.add('hidden');
+      }
+    });
+    postTargetSelect.addEventListener('change', () => {
+      factoryPostTarget = postTargetSelect.value || 'vault_only';
+      chrome.storage.local.set({ phimbot_post_target: factoryPostTarget });
+      const schedBox = $('#factoryScheduleBox');
+      if (schedBox) {
+        if (factoryPostTarget === 'queue_schedule') schedBox.classList.remove('hidden');
+        else schedBox.classList.add('hidden');
+      }
+    });
+  }
+
+  // ═══ Hashtag & Caption Helpers ═══
+  function resolveProductHashtags(productOrItem) {
+    let rawTags = [];
+
+    // 1. Direct hashtags field on item
+    if (productOrItem) {
+      if (Array.isArray(productOrItem.hashtags) && productOrItem.hashtags.length > 0) {
+        rawTags.push(...productOrItem.hashtags);
+      } else if (typeof productOrItem.hashtags === 'string' && productOrItem.hashtags.trim()) {
+        rawTags.push(...productOrItem.hashtags.replace(/,/g, ' ').split(/\s+/));
+      }
+    }
+
+    // 2. Look up product in factoryProducts by ID or name
+    if (rawTags.length === 0 && productOrItem && typeof factoryProducts !== 'undefined') {
+      const pId = productOrItem.productId || productOrItem.id;
+      const matched = factoryProducts.find(p => (p.productId || p.id) === pId || (productOrItem.productName && p.name === productOrItem.productName));
+      if (matched) {
+        if (Array.isArray(matched.hashtags) && matched.hashtags.length > 0) {
+          rawTags.push(...matched.hashtags);
+        } else if (typeof matched.hashtags === 'string' && matched.hashtags.trim()) {
+          rawTags.push(...matched.hashtags.replace(/,/g, ' ').split(/\s+/));
+        }
+      }
+    }
+
+    // 3. Check UI hashtags input in sidepanel
+    if (rawTags.length === 0) {
+      const inputVal = document.getElementById('hashtagsInput')?.value;
+      if (inputVal && inputVal.trim()) {
+        rawTags.push(...inputVal.replace(/,/g, ' ').split(/\s+/));
+      }
+    }
+
+    // 4. Extract from caption or headline
+    if (rawTags.length === 0 && productOrItem) {
+      const textSource = `${productOrItem.caption || ''} ${productOrItem.headline || ''}`;
+      const matches = textSource.match(/#([a-zA-Z0-9ก-๙_]+)/g);
+      if (matches) {
+        rawTags.push(...matches);
+      }
+    }
+
+    // 5. Default fallback tags
+    if (rawTags.length === 0) {
+      rawTags = ['TikTokShop', 'TikTokShopTH', 'ของดีบอกต่อ', 'รีวิว'];
+    }
+
+    // Clean, remove '#' prefix, deduplicate, limit to 5
+    const cleaned = Array.from(new Set(
+      rawTags
+        .map(t => String(t || '').trim().replace(/^#+/, ''))
+        .filter(Boolean)
+    )).slice(0, 5);
+
+    return cleaned.length > 0 ? cleaned : ['TikTokShop', 'TikTokShopTH', 'ของดีบอกต่อ', 'รีวิว'];
+  }
+
+  function cleanCaptionText(headline, productName, caption) {
+    let text = '';
+    if (caption && caption.trim()) {
+      text = caption;
+    } else {
+      const h = (headline || '').trim();
+      const p = (productName || '').trim();
+      if (h && p) {
+        text = h.toLowerCase().includes(p.toLowerCase()) ? h : `${h}\n${p}`;
+      } else {
+        text = h || p || 'รีวิวสินค้าของดีบอกต่อ';
+      }
+    }
+    // Remove internal tags like [คลิป 1/2 - Hook A]
+    text = text.replace(/\s*\[คลิป\s*\d+\/\d+[^\]]*\]/g, '').trim();
+    return text;
+  }
+
+  function resolveProductImage(productOrItem) {
+    if (!productOrItem) return '';
+    if (productOrItem.productImage) return productOrItem.productImage;
+    if (productOrItem.imageUrl) return productOrItem.imageUrl;
+    if (productOrItem.image) return productOrItem.image;
+    if (Array.isArray(productOrItem.images) && productOrItem.images.length > 0) {
+      const first = productOrItem.images[0];
+      return typeof first === 'string' ? first : (first?.url || '');
+    }
+    const pId = productOrItem.productId || productOrItem.id || productOrItem.offerId;
+    const pName = productOrItem.productName || productOrItem.name || productOrItem.title;
+    if (typeof factoryProducts !== 'undefined' && factoryProducts.length > 0) {
+      const matched = factoryProducts.find(p => (pId && (p.productId === pId || p.id === pId)) || (pName && p.name === pName));
+      if (matched) {
+        if (matched.imageUrl) return matched.imageUrl;
+        if (matched.image) return matched.image;
+        if (Array.isArray(matched.images) && matched.images.length > 0) {
+          const first = matched.images[0];
+          return typeof first === 'string' ? first : (first?.url || '');
+        }
+      }
+    }
+    return '';
+  }
+
+  function generateVideoThumbnail(videoBase64OrDataUrl) {
+    return new Promise((resolve) => {
+      if (!videoBase64OrDataUrl || typeof videoBase64OrDataUrl !== 'string') return resolve('');
+      const dataUrl = videoBase64OrDataUrl.startsWith('data:')
+        ? videoBase64OrDataUrl
+        : `data:video/mp4;base64,${videoBase64OrDataUrl}`;
+      try {
+        const v = document.createElement('video');
+        v.muted = true;
+        v.preload = 'auto';
+        v.crossOrigin = 'anonymous';
+        let done = false;
+        const timer = setTimeout(() => {
+          if (!done) { done = true; v.remove(); resolve(''); }
+        }, 5000);
+
+        v.addEventListener('loadeddata', () => {
+          v.currentTime = 0.2;
+        }, { once: true });
+
+        v.addEventListener('seeked', () => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          try {
+            const canvas = document.createElement('canvas');
+            const maxDim = 120;
+            const w = v.videoWidth || 120;
+            const h = v.videoHeight || 120;
+            const scale = maxDim / Math.max(w, h, 1);
+            canvas.width = Math.max(36, Math.round(w * scale));
+            canvas.height = Math.max(36, Math.round(h * scale));
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+            const thumb = canvas.toDataURL('image/jpeg', 0.7);
+            v.remove();
+            resolve(thumb);
+          } catch (_) {
+            v.remove();
+            resolve('');
+          }
+        }, { once: true });
+
+        v.addEventListener('error', () => {
+          if (!done) { done = true; clearTimeout(timer); v.remove(); resolve(''); }
+        }, { once: true });
+
+        v.src = dataUrl;
+      } catch (_) {
+        resolve('');
+      }
+    });
+  }
+
+  function cleanProductId(raw) {
+    const s = String(raw || '').trim();
+    if (!s || /^(PID_)?UNKNOWN$/i.test(s) || /^null$/i.test(s) || /^undefined$/i.test(s)) return '';
+    return s.replace(/^PID_/i, '').trim();
+  }
+
+  async function resolveCatalogProduct(vidOrItem, fallbackIndex = 0) {
+    const rawPid = cleanProductId(vidOrItem?.productId || vidOrItem?.tiktokProductId || vidOrItem?.id);
+    const rawName = String(vidOrItem?.productName || vidOrItem?.name || vidOrItem?.title || '').trim();
+    const list1 = (typeof factoryProducts !== 'undefined' && Array.isArray(factoryProducts)) ? factoryProducts : [];
+    const store = await chrome.storage.local.get(['phimbot_products']).catch(() => ({}));
+    const list2 = Array.isArray(store?.phimbot_products) ? store.phimbot_products : [];
+    const allProds = [...list1, ...list2];
+
+    let matched = null;
+    if (rawPid) {
+      matched = allProds.find(p => cleanProductId(p.productId || p.tiktokProductId || p.id) === rawPid);
+    }
+    if (!matched && rawName) {
+      matched = allProds.find(p => {
+        const pn = String(p.name || p.title || '').trim();
+        return pn && (pn === rawName || pn.includes(rawName) || rawName.includes(pn));
+      });
+    }
+    if (!matched && list1.length > 0) {
+      matched = list1[fallbackIndex % list1.length] || list1[0];
+    }
+    if (!matched && list2.length > 0) {
+      matched = list2[fallbackIndex % list2.length] || list2[0];
+    }
+    return {
+      matched,
+      productId: rawPid || cleanProductId(matched?.tiktokProductId || matched?.productId || matched?.id),
+      productUrl: vidOrItem?.productUrl || matched?.affiliateUrl || matched?.productUrl || matched?.offerUrl || matched?.url || '',
+      productName: rawName || matched?.name || matched?.title || 'สินค้า',
+    };
+  }
+
+  // Post execution helper after production
+  async function executeAutoPostTarget(targetArg, batchStartTime) {
+    // อ่านค่าสดจาก dropdown เสมอ เพื่อให้ตรงกับที่ผู้ใช้เลือกไว้ใน UI
+    const liveSelectVal = $('#factoryPostTargetSelect')?.value;
+    const target = liveSelectVal || targetArg || factoryPostTarget || 'vault_only';
+    factoryPostTarget = target;
+
+    const TARGET_LABELS = {
+      vault_only: '💾 เก็บในคลัง (ไม่โพสต์)',
+      cloud_sync: '☁️ ส่งเข้ามือถืออัตโนมัติ (PUP PAP POST)',
+      tiktok_now: '🎵 โพสต์ TikTok Shop ทันที (ติดตะกร้า)',
+      shopee_now: '🛒 โพสต์ Shopee Video ทันที',
+      reels_now: '🎬 โพสต์ Facebook Reels ทันที',
+      queue_schedule: '⏳ เข้าคิว / ตั้งเวลาโพสต์รวม (ติดตะกร้า)',
+      post_now: '🚀 โพสต์ทันทีตามแหล่งสินค้า'
+    };
+    addMonitorLog(`📤 [STEP 4] เป้าหมาย: ${TARGET_LABELS[target] || target}`, 'POST');
+
+    // อัปเดต UI แท็บคลังวีดีโอทันทีเพื่อให้เห็นคลิปใหม่เสมอ
+    try { await refreshVault(); } catch (_) {}
+
+    // ═══ Guard: บังคับมี batchStartTime เพื่อป้องกันโพสต์คลิปเก่า ═══
+    if (!batchStartTime) {
+      addMonitorLog('⛔ ยกเลิกโพสต์: ไม่พบ batchStartTime — ป้องกันการโพสต์คลิปที่ไม่ได้อยู่ใน batch นี้', 'ERROR');
+      showToast('⛔ ยกเลิกโพสต์: ไม่พบข้อมูล batch', 5000);
+      return { tiktok: 0, shopee: 0, reels: 0, cloudSync: 0, total: 0, skipped: true };
+    }
+
+    // ═══ อ่าน vault ตรงจาก chrome.storage.local + merge video data ═══
+    const storeData = await chrome.storage.local.get(['phimbot_media_vault']);
+    const vaultList = storeData.phimbot_media_vault || [];
+
+    // merge video base64 จาก key แยก
+    const videoKeys = vaultList
+      .filter(v => v.videoStorageKey && v.videoStorageKey !== 'storage_failed' && !v.videoBase64)
+      .map(v => v.videoStorageKey);
+    if (videoKeys.length > 0) {
+      const videoData = await chrome.storage.local.get(videoKeys);
+      for (const item of vaultList) {
+        if (item.videoStorageKey && videoData[item.videoStorageKey]) {
+          item.videoBase64 = videoData[item.videoStorageKey];
+        }
+      }
+    }
+
+    // filter: ยังไม่โพสต์ + มี videoBase64 จริง + เฉพาะ batch ปัจจุบันเท่านั้น
+    const unposted = vaultList.filter(v =>
+      !v.posted?.tiktok && !v.posted?.shopee && !v.posted?.reels && v.videoBase64 && v.videoBase64.length > 100
+      && v.createdAt && v.createdAt >= batchStartTime
+    );
+
+    addMonitorLog(`📊 คลังวีดีโอทั้งหมด: ${vaultList.length} คลิป | คลิปใหม่ในรอบนี้: ${unposted.length} คลิป`, 'INFO');
+
+    if (unposted.length === 0) {
+      addMonitorLog('ℹ️ ไม่พบคลิปใหม่ใน batch นี้', 'INFO');
+      showToast('ℹ️ ไม่พบคลิปใหม่สำหรับดำเนินการ');
+      return { tiktok: 0, shopee: 0, reels: 0, cloudSync: 0, total: 0 };
+    }
+
+    // ═══ vault_only → เก็บในคลังวีดีโอเรียบร้อย (ไม่โพสต์) ═══
+    if (target === 'vault_only') {
+      addMonitorLog(`💾 บันทึก ${unposted.length} คลิปไว้ใน "คลังวีดีโอ" เรียบร้อย (โหมดเก็บในคลัง)`, 'INFO');
+      showToast(`💾 เก็บ ${unposted.length} คลิปในคลังเรียบร้อย — ไปแท็บ "คลัง" เพื่อเลือกโพสต์หรือติดตะกร้าทีหลัง`, 5000);
+      return { tiktok: 0, shopee: 0, reels: 0, cloudSync: 0, total: unposted.length, vaultOnly: true };
+    }
+
+    // ═══ ดำเนินการส่งต่องานอัตโนมัติ 100% (ไม่มี confirm popup ขัดจังหวะ) ═══
+    addMonitorLog(`🚀 เริ่มส่งต่อ ${unposted.length} คลิปไปยัง "${TARGET_LABELS[target] || target}" อัตโนมัติ...`, 'POST');
+    let tiktokCount = 0;
+    let shopeeCount = 0;
+    let reelsCount = 0;
+    let cloudSyncCount = 0;
+    let errorCount = 0;
+
+    const intervalMinutes = parseInt($('#factoryQueueInterval')?.value || '30', 10) || 30;
+
+    for (let i = 0; i < unposted.length; i++) {
+      const vid = unposted[i];
+      const progress = `(${i + 1}/${unposted.length})`;
+      const cleanCaption = cleanCaptionText(vid.headline, vid.productName, vid.caption);
+      const pHashtags = (Array.isArray(vid.hashtags) && vid.hashtags.length) ? vid.hashtags : resolveProductHashtags(vid);
+      const pImg = vid.productImage || resolveProductImage(vid);
+      const vThumb = vid.thumbnail || await generateVideoThumbnail(vid.videoBase64);
+
+      // ค้นหาข้อมูลสินค้าที่ตรงกันเพื่อดึงรหัสติดตะกร้า (productId) และลิงก์สินค้าให้ครบถ้วน
+      const resolvedMeta = await resolveCatalogProduct(vid, i);
+      const matchedProd = resolvedMeta.matched;
+      const resolvedProductId = resolvedMeta.productId;
+      let resolvedProductUrl = resolvedMeta.productUrl;
+
+      // 1. CLOUD SYNC TARGET (ส่งตรงเข้ามือถือ PUP PAP POST)
+      if (target === 'cloud_sync') {
+        if (window.ASUClipSync) {
+          try {
+            const s = await window.ASUClipSync.getClipSyncSettings();
+            if (s.pairCode) {
+              addMonitorLog(`📲 ${progress} [Cloud Sync] ส่ง "${(vid.productName || '').slice(0, 30)}..." เข้ามือถือ`, 'POST');
+              showToast(`📲 ${progress} ส่งมือถือ...`);
+              if (!resolvedProductUrl && matchedProd) {
+                resolvedProductUrl = window.ASUClipSync.resolveClipSyncProductUrl(matchedProd);
+              }
+              const pushRes = await window.ASUClipSync.pushClipToRelay(vid.videoBase64, {
+                sourceMode: 'autopilot',
+                productTitle: vid.productName || vid.headline || '',
+                productUrl: resolvedProductUrl,
+                caption: cleanCaption,
+                hashtags: pHashtags.join(' ')
+              });
+              if (pushRes && pushRes.success) {
+                await sendMsg('PHIMBOT_VAULT_MARK_POSTED', { id: vid.id, platform: 'shopee' });
+                cloudSyncCount++;
+                addMonitorLog(`✅ ${progress} [Cloud Sync] ส่งเข้ามือถือเรียบร้อย`, 'POST');
+              } else {
+                errorCount++;
+                addMonitorLog(`❌ ${progress} [Cloud Sync] ส่งไม่สำเร็จ: ${pushRes?.error || 'unknown'}`, 'ERROR');
+              }
+            } else {
+              errorCount++;
+              addMonitorLog(`⚠️ ${progress} [Cloud Sync] ไม่พบรหัสจับคู่มือถือ (กรุณาตั้งค่าในแท็บตั้งค่า)`, 'ERROR');
+            }
+          } catch (e) {
+            errorCount++;
+            addMonitorLog(`❌ ${progress} [Cloud Sync] เกิดข้อผิดพลาด: ${e.message}`, 'ERROR');
+          }
+        } else {
+          errorCount++;
+          addMonitorLog(`❌ ${progress} [Cloud Sync] ไม่พบโมดูล ASUClipSync`, 'ERROR');
+        }
+      }
+
+      // 2. FACEBOOK REELS TARGET
+      else if (target === 'reels_now') {
+        try {
+          addMonitorLog(`📤 ${progress} [Reels] บรรจุ "${(vid.productName || '').slice(0, 30)}..." ลงคิว Reels`, 'POST');
+          const safeName = (vid.productName || 'reel').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40);
+          const reelsJob = {
+            id: `phim_fb_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_${i}`,
+            platform: 'fb-reels',
+            filename: `${safeName}_${Date.now()}.mp4`,
+            videoDataUrl: vid.videoBase64,
+            caption: cleanCaption,
+            hashtags: ['reels', 'reelsfb', 'ของดีบอกต่อ', 'รีวิว'],
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            scheduleMode: 'now',
+            needsAiCaption: true,
+            aiContext: {
+              productName: vid.productName || 'สินค้า',
+              productDesc: vid.headline || '',
+              affiliateUrl: resolvedProductUrl,
+              videoIndex: i,
+              totalVideos: unposted.length
+            }
+          };
+          const qRes = await sendMsg('PHIMBOT_ADD_TO_QUEUE', reelsJob);
+          if (qRes.success) {
+            await sendMsg('PHIMBOT_VAULT_MARK_POSTED', { id: vid.id, platform: 'reels' });
+            reelsCount++;
+            addMonitorLog(`✅ ${progress} [Reels] เพิ่มเข้าคิวสำเร็จ`, 'POST');
+          } else {
+            errorCount++;
+            addMonitorLog(`❌ ${progress} [Reels] เพิ่มคิวไม่สำเร็จ`, 'ERROR');
+          }
+        } catch (e) {
+          errorCount++;
+          addMonitorLog(`❌ ${progress} [Reels] เกิดข้อผิดพลาด: ${e.message}`, 'ERROR');
+        }
+      }
+
+      // 3. TIKTOK NOW / SHOPEE NOW / QUEUE SCHEDULE
+      else {
+        const isShopee = target === 'shopee_now' || (target === 'post_now' && (vid.platform === 'shopee' || (resolvedProductUrl && resolvedProductUrl.includes('shopee'))));
+
+        if (isShopee) {
+          if (window.ASUClipSync) {
+            try {
+              const s = await window.ASUClipSync.getClipSyncSettings();
+              if (s.pairCode) {
+                addMonitorLog(`📲 ${progress} [Shopee] กำลังส่ง "${(vid.productName || '').slice(0, 30)}..." เข้ามือถือ`, 'POST');
+                if (!resolvedProductUrl && matchedProd) {
+                  resolvedProductUrl = window.ASUClipSync.resolveClipSyncProductUrl(matchedProd);
+                }
+                const pushRes = await window.ASUClipSync.pushClipToRelay(vid.videoBase64, {
+                  sourceMode: 'autopilot',
+                  productTitle: vid.productName || vid.headline || '',
+                  productUrl: resolvedProductUrl,
+                  caption: cleanCaption,
+                  hashtags: '#ShopeeTH #ShopeeVideo #รีวิว #ของดีบอกต่อ'
+                });
+                if (pushRes && pushRes.success) {
+                  await sendMsg('PHIMBOT_VAULT_MARK_POSTED', { id: vid.id, platform: 'shopee' });
+                  shopeeCount++;
+                  addMonitorLog(`✅ ${progress} [Shopee] ส่งเข้ามือถือเรียบร้อย`, 'POST');
+                } else {
+                  errorCount++;
+                  addMonitorLog(`❌ ${progress} [Shopee] ส่งไม่สำเร็จ: ${pushRes?.error || 'unknown'}`, 'ERROR');
+                }
+              } else {
+                errorCount++;
+                addMonitorLog(`⚠️ ${progress} [Shopee] ไม่พบรหัสจับคู่มือถือ`, 'ERROR');
+              }
+            } catch (e) {
+              errorCount++;
+              addMonitorLog(`❌ ${progress} [Shopee] ส่งไม่สำเร็จ: ${e.message}`, 'ERROR');
+            }
+          }
+        } else {
+          // TIKTOK QUEUE (พร้อมรหัสสินค้า productId สำหรับติดตะกร้าอัตโนมัติ)
+          try {
+            const isScheduled = (target === 'queue_schedule');
+            let scheduledAtIso = null;
+            if (isScheduled) {
+              const targetDate = new Date(Date.now() + (20 + i * intervalMinutes) * 60000);
+              targetDate.setMinutes(Math.ceil(targetDate.getMinutes() / 5) * 5);
+              targetDate.setSeconds(0, 0);
+              if (targetDate.getTime() < Date.now() + 16 * 60000) {
+                targetDate.setTime(Date.now() + (20 + i * intervalMinutes) * 60000);
+                targetDate.setMinutes(Math.ceil(targetDate.getMinutes() / 5) * 5);
+              }
+              scheduledAtIso = targetDate.toISOString();
+            }
+
+            const prodTitle = (vid.productName || matchedProd?.name || matchedProd?.title || vid.headline || 'สินค้า').trim();
+            addMonitorLog(`📤 ${progress} [TikTok] บรรจุ "${prodTitle.slice(0, 30)}..." (รหัสตะกร้า: ${resolvedProductId || 'ไม่มี'}) ลงคิว (${isScheduled ? 'ตั้งเวลา' : 'โพสต์ทันที'})`, 'POST');
+
+            const tiktokJob = {
+              id: `autopilot_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+              videoDataUrl: vid.videoBase64,
+              caption: cleanCaption,
+              hashtags: pHashtags,
+              thumbnail: vThumb,
+              productImage: pImg,
+              source: 'factory_autopilot',
+              productId: resolvedProductId,
+              productUrl: resolvedProductUrl,
+              publishMode: isScheduled ? 'scheduled' : 'now',
+              scheduleMode: isScheduled ? 'schedule' : 'now',
+              scheduledAt: scheduledAtIso,
+              needsAiCaption: true,
+              aiContext: {
+                productName: prodTitle,
+                productDesc: vid.headline || '',
+                videoIndex: i,
+                totalVideos: unposted.length,
+              }
+            };
+            const qRes = await sendMsg('PHIMBOT_ADD_TO_QUEUE', tiktokJob);
+            if (qRes.success) {
+              await sendMsg('PHIMBOT_VAULT_MARK_POSTED', { id: vid.id, platform: 'tiktok' });
+              tiktokCount++;
+              addMonitorLog(`✅ ${progress} [TikTok] เพิ่มเข้าคิวสำเร็จ${resolvedProductId ? ' (พร้อมปักตะกร้า #' + resolvedProductId + ')' : ''}`, 'POST');
+            } else {
+              errorCount++;
+              addMonitorLog(`❌ ${progress} [TikTok] เพิ่มคิวไม่สำเร็จ`, 'ERROR');
+            }
+          } catch (e) {
+            errorCount++;
+            addMonitorLog(`❌ ${progress} [TikTok] เกิดข้อผิดพลาด: ${e.message}`, 'ERROR');
+          }
+        }
+      }
+    }
+
+    try { await refreshVault(); } catch (_) {}
+
+    if ((target === 'post_now' || target === 'tiktok_now' || target === 'reels_now' || target === 'queue_schedule') && (tiktokCount > 0 || reelsCount > 0)) {
+      addMonitorLog(`🚀 สั่งเริ่มรันคิวโพสต์และติดตะกร้าอัตโนมัติทันที...`, 'POST');
+      await sendMsg('PHIMBOT_START_QUEUE');
+    }
+
+    // ═══ สรุปผล ═══
+    const summary = [];
+    if (cloudSyncCount > 0) summary.push(`มือถือ (Cloud Sync) ${cloudSyncCount}`);
+    if (tiktokCount > 0) summary.push(`TikTok ${tiktokCount}`);
+    if (shopeeCount > 0) summary.push(`Shopee ${shopeeCount}`);
+    if (reelsCount > 0) summary.push(`Reels ${reelsCount}`);
+    if (errorCount > 0) summary.push(`ผิดพลาด ${errorCount}`);
+    const summaryText = `🏁 สรุป: ${summary.join(' | ') || 'ไม่มีรายการ'} จาก ${unposted.length} คลิป`;
+    addMonitorLog(summaryText, 'INFO');
+    showToast(summaryText, 6000);
+
+    return { tiktok: tiktokCount, shopee: shopeeCount, reels: reelsCount, cloudSync: cloudSyncCount, errors: errorCount, total: unposted.length };
+  }
+
+  // One-Click Auto-Pilot Main Runner (v3 — ใช้ Tool Engine ผ่าน EXT_INJECT_DATA + autoRun)
+  $('#btnOneClickAutoPilot')?.addEventListener('click', async () => {
+    if (factoryProducts.length === 0) {
+      showToast('⚠️ กรุณาเลือกสินค้าจากคลังก่อนกดเดินเครื่อง');
+      return;
+    }
+    if (isFactoryBusy) {
+      showToast('⚠️ ระบบกำลังทำงานอยู่ กรุณารอสักครู่');
+      return;
+    }
+    isFactoryBusy = true; // ← ล็อคทันที ก่อน await เพื่อกัน double-click
+    isFactoryAborted = false;
+
+    // ═══ Engine Selection & Pre-Check with Auto-Fallback ═══
+    let selectedEngine = $('#factoryVideoEngine')?.value || 'google_flow';
+
+    const allTabs = await chrome.tabs.query({});
+    let flowTabs = allTabs.filter(t => t.url && (t.url.includes('flow.google.com') || t.url.includes('labs.google')));
+    let metaTabs = allTabs.filter(t => t.url && t.url.includes('meta.ai'));
+
+    // Pre-check & Auto-Open Ai SALER PRO Tool URL when Google Flow is selected
+    const DEFAULT_FLOW_TOOL_URL = 'https://flow.google.com/project/6e488c48-d736-4586-9466-e3ad189813e7/tool/4365c4fb-023d-40be-82e6-8b4d0d080c4c?mode=APP';
+    if (selectedEngine === 'google_flow') {
+      // Save any open /tool/ URL for future sessions
+      const toolTab = flowTabs.find(t => t.url && t.url.includes('/tool/'));
+      if (toolTab?.url) {
+        try { await chrome.storage.local.set({ phimbot_flow_tool_url: toolTab.url }); } catch (_) {}
+      } else {
+        const stUrl = await chrome.storage.local.get(['phimbot_flow_tool_url']).catch(() => ({}));
+        const targetToolUrl = stUrl?.phimbot_flow_tool_url || DEFAULT_FLOW_TOOL_URL;
+        if (flowTabs.length > 0) {
+          addMonitorLog('🌐 กำลังเข้าสู่หน้า Ai SALER PRO Tool ในแท็บ Google Flow อัตโนมัติ...', 'INFO');
+          await chrome.tabs.update(flowTabs[0].id, { url: targetToolUrl });
+        } else {
+          addMonitorLog('🌐 กำลังเปิดแท็บ Google Flow (Ai SALER PRO Tool) อัตโนมัติ...', 'INFO');
+          const newFlowTab = await chrome.tabs.create({ url: targetToolUrl, active: false });
+          flowTabs = [newFlowTab];
+        }
+        // รอให้หน้า Ai SALER PRO และ iframe โหลดเสร็จ
+        for (let w = 0; w < 16; w++) {
+          await new Promise(r => setTimeout(r, 1000));
+          const refreshedTabs = await chrome.tabs.query({});
+          flowTabs = refreshedTabs.filter(t => t.url && (t.url.includes('flow.google.com') || t.url.includes('labs.google')));
+          if (flowTabs.some(t => t.status === 'complete' && t.url?.includes('/tool/'))) break;
+        }
+        await new Promise(r => setTimeout(r, 2500));
+      }
+    } else if (selectedEngine === 'meta_ai' && !metaTabs.length) {
+      addMonitorLog('🌐 [Pre-check] กำลังเปิดแท็บ Meta AI...');
+      const newTab = await chrome.tabs.create({ url: 'https://www.meta.ai/', active: false });
+      await new Promise(r => setTimeout(r, 4000));
+      metaTabs = [newTab];
+    }
+
+    const btn = $('#btnOneClickAutoPilot');
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ กำลังเตรียมการผลิตอัตโนมัติ...';
+
+    // Show monitor UI
+    const monitor = $('#factoryMonitor');
+    if (monitor) monitor.classList.remove('hidden');
+    const logEl = $('#monLog');
+    if (logEl) logEl.innerHTML = '';
+    setMonitorRunningState();
+
+    const engineLabel = selectedEngine === 'meta_ai' ? 'Meta AI' : 'Ai SALER PRO Tool Engine';
+    addMonitorLog(`🚀 เริ่มกระบวนการ One-Click Auto-Pilot v3 (ใช้ ${engineLabel})...`);
+
+    // ═══ Content Style ═══
+    const contentStyle = $('#factoryContentStyle')?.value || 'influencer_review';
+    const STYLE_PROMPTS = {
+      influencer_review: 'แนวรีวิวป้ายยาไม่อวย: พูดคุยเป็นธรรมชาติเหมือนเพื่อนแนะนำเพื่อน เน้นความจริงใจ ชี้จุดเด่นชัดเจน ชี้เป้าให้กดตะกร้า',
+      viral_hook: 'แนวไวรัลเปิดหัวแรง: 3 วินาทีแรกเปิดด้วยคำถามชวนสงสัย ดึงดูดสายตาหยุดนิ้วโป้งทันที ตัดสลับมุมมองรวดเร็ว ตื่นเต้น',
+      problem_solver: 'แนวสตอรี่แก้ปัญหาชีวิต: ชู Pain point ความลำบากที่ทุกคนเจอ แล้วเปิดตัวสินค้าเป็นฮีโร่แก้ปัญหา ใช้งานง่าย ตอบโจทย์',
+      hot_deal: 'แนวโปรเด็ดแจกพิกัดราคาโดน: เน้นความคุ้มค่าเกินราคา มีโปรโมชั่นพิเศษ ของแท้ราคาดี รีบกดสั่งก่อนหมด',
+      pro_showcase: 'แนวโฆษณาพรีเมียม ทางการ: ภาพลักษณ์หรูหรา คมชัด แสงสีสวยงามระดับสตูดิโอ เน้นดีไซน์ วัสดุ นวัตกรรม และความน่าเชื่อถือ'
+    };
+    const styleGuidance = STYLE_PROMPTS[contentStyle] || STYLE_PROMPTS.influencer_review;
+    addMonitorLog(`🎭 สไตล์คอนเทนต์: ${styleGuidance.split(':')[0]}`);
+
+    // Read settings from UI
+    const ideaCount = parseInt($('#factoryIdeaCount')?.value || '1', 10);
+    const sceneCount = parseInt($('#factorySceneCount')?.value || '1', 10);
+    const duration = parseInt($('#factoryDuration')?.value || '8', 10);
+    const imageModel = $('#factoryImageModel')?.value || '🍌 Nano Banana 2.1';
+    const videoModel = $('#factoryVideoModel')?.value || 'Omni 1.1 Flash';
+
+    if (selectedEngine === 'meta_ai') {
+      addMonitorLog('⚙️ Engine: 🤖 Meta AI — ส่ง prompt + รูปสินค้า + รูปตัวละคร');
+    } else {
+      addMonitorLog(`⚙️ ตั้งค่า: ไอเดีย=${ideaCount}, ฉาก=${sceneCount}, วิดีโอ=${duration}วิ, โมเดลรูป=${imageModel}, โมเดลวีดีโอ=${videoModel}`);
+    }
+
+    try {
+      // ═══════════ สเต็ป 1: สร้าง Payload ตาม Schema ที่ Tool คาดหวัง ═══════════
+      addMonitorLog('📡 สเต็ป 1: จัดเตรียมข้อมูลสินค้า รูปภาพ Reference และการตั้งค่า...');
+      btn.innerHTML = '📡 เตรียมข้อมูล + ดาวน์โหลดรูป...';
+
+      // Helper: แปลง URL → base64 data URL (ทำงานใน extension context ไม่ติด CORS)
+      async function urlToBase64(url) {
+        if (!url) return '';
+        if (String(url).startsWith('data:')) return url; // เป็น base64 อยู่แล้ว
+        try {
+          const resp = await fetch(url);
+          if (!resp.ok) return url; // ถ้าดาวน์โหลดไม่ได้ ส่ง URL เดิม
+          const blob = await resp.blob();
+          return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => resolve(url);
+            reader.readAsDataURL(blob);
+          });
+        } catch (e) {
+          console.warn('[AutoPilot] urlToBase64 failed:', url, e);
+          return url;
+        }
+      }
+
+      // แปลงรูปสินค้าเป็น base64 (จำกัดสูงสุด 2 รูปแรกต่อสินค้าเพื่อความรวดเร็วสูงสุด)
+      const MAX_PRODUCT_IMAGES = 2;
+      addMonitorLog(`📷 กำลังดาวน์โหลดรูปสินค้า (คัดเฉพาะ ${MAX_PRODUCT_IMAGES} รูปหลักเพื่อความเร็วสูงสุด)...`);
+      const convertedProducts = [];
+      for (const p of factoryProducts) {
+        const rawImages = (p.images || [p.imageUrl || '']).filter(Boolean).slice(0, MAX_PRODUCT_IMAGES);
+        addMonitorLog(`  📷 [${p.name?.slice(0, 20)}] เตรียมรูป ${rawImages.length} รูป...`);
+        const resolvedUrls = await Promise.all(rawImages.map(async (imgUrl) => {
+          let dataUrl = await urlToBase64(imgUrl);
+          if (dataUrl && !dataUrl.startsWith('data:')) {
+            try {
+              const bgRes = await sendMsg('PHIMBOT_FETCH_IMAGE_BASE64', { url: dataUrl });
+              if (bgRes?.base64 && bgRes.base64.startsWith('data:')) {
+                dataUrl = bgRes.base64;
+              }
+            } catch (_) {}
+          }
+          return (dataUrl && dataUrl.startsWith('data:')) ? { url: dataUrl } : null;
+        }));
+        const base64Assets = resolvedUrls.filter(Boolean);
+        convertedProducts.push({
+          name: p.name || p.title || 'สินค้า',
+          tiktokProductId: String(p.tiktokProductId || p.productId || p.id || '').replace(/^PID_/i, '').trim(),
+          productUrl: p.affiliateUrl || p.productUrl || p.offerUrl || p.url || p.link || '',
+          platform: p.platform || ((p.affiliateUrl || p.productUrl || '').includes('shopee') ? 'shopee' : 'tiktok'),
+          keywords: p.keywords || p.description || p.name || '',
+          assets: base64Assets
+        });
+      }
+      addMonitorLog(`✅ ดาวน์โหลดรูปสินค้าเสร็จ (${convertedProducts.reduce((s, p) => s + p.assets.length, 0)} รูป)`);
+
+      // แปลงรูปอินฟลูเอนเซอร์เป็น base64 เช่นกัน + วิเคราะห์เพศอัตโนมัติหากยังไม่ได้วิเคราะห์
+      let influencerBase64 = '';
+      if (factoryCharImages && factoryCharImages[0]) {
+        addMonitorLog('📷 กำลังเตรียมรูปตัวละคร/อินฟลูเอนเซอร์...');
+        influencerBase64 = await urlToBase64(factoryCharImages[0]);
+        if (influencerBase64 && !userManuallySelectedGender && window.__lastAnalyzedCharImg !== influencerBase64) {
+          addMonitorLog('🔍 กำลังวิเคราะห์เพศจากรูปตัวละครอัตโนมัติ...');
+          try {
+            const det = await sendMsg('PHIMBOT_DETECT_CHARACTER_GENDER', { dataUrl: influencerBase64 });
+            if (det?.ok && det.gender) {
+              window.__lastAnalyzedCharImg = influencerBase64;
+              window.__lastAnalyzedCharGender = det.gender;
+              setFactoryGenderUI(det.gender, true, false);
+              addMonitorLog(`✅ ตรวจพบรูปตัวละครเพศ: ${det.gender === 'male' ? '👨 ชาย (ครับ)' : '👩 หญิง (ค่ะ)'}`);
+            }
+          } catch (_) {}
+        }
+      }
+
+      const resolvedGender = document.querySelector('.factory-voice-btn.active')?.dataset?.voice
+        || $('#metaAiCharGender')?.value
+        || factoryVoice
+        || 'female';
+      addMonitorLog(`🗣️ เพศตัวละครและคำลงท้ายที่ส่งเข้า Tool: ${resolvedGender === 'male' ? '👨 ชาย (ครับ)' : '👩 หญิง (ค่ะ)'}`);
+
+      // อ่านเป้าหมายหลังผลิตเสร็จจาก dropdown สดๆ เสมอ
+      factoryPostTarget = $('#factoryPostTargetSelect')?.value || factoryPostTarget || 'vault_only';
+
+      const toolPayload = {
+        autoRun: true,       // ← ทริกเกอร์ให้ Tool เริ่ม Pipeline อัตโนมัติทันที
+        autoStart: true,     // ← alias ที่ Tool รองรับเช่นกัน
+        postTarget: factoryPostTarget,
+        // Root-level count & gender fields (ซ้ำหลาย alias เพื่อให้แน่ใจว่า Tool อ่านค่าได้)
+        campaignCount: ideaCount,
+        sceneCount: sceneCount,
+        ideaCount: ideaCount,
+        targetSetCount: ideaCount,
+        scenes: sceneCount,
+        duration: duration,
+        gender: resolvedGender,
+        voiceGender: resolvedGender,
+        settings: {
+          imageModel: imageModel,
+          videoModel: videoModel,
+          duration: String(duration),
+          durationSeconds: duration,
+          campaignCount: ideaCount,
+          sceneCount: sceneCount,
+          ideaCount: ideaCount,
+          targetSetCount: ideaCount,
+          scenes: sceneCount,
+          productionMode: factoryMode || 'influencer',
+          gender: resolvedGender,
+          voiceGender: resolvedGender,
+          contentStyle: contentStyle,
+          styleGuidance: styleGuidance
+        },
+        strategy: {
+          voiceGender: resolvedGender
+        },
+        influencer: {
+          name: 'น้องเอไอ',
+          gender: resolvedGender,
+          voiceGender: resolvedGender,
+          url: influencerBase64,
+          image: influencerBase64
+        },
+        products: convertedProducts
+      };
+
+      addMonitorLog(`✅ เตรียมข้อมูลสินค้า ${toolPayload.products.length} รายการ (${toolPayload.products.map(p => `"${p.name}"`).join(', ')})`);
+
+      // ╔═══════════════════════════════════════════════════════════════════╗
+      // ║  META AI PIPELINE — ถ้าเลือก Meta AI จะแยก flow ตรงนี้          ║
+      // ╚═══════════════════════════════════════════════════════════════════╝
+      if (selectedEngine === 'meta_ai') {
+        addMonitorLog('🤖 สเต็ป 2: เริ่มระบบผลิตอัตโนมัติด้วย Meta AI...', 'ENGINE');
+        btn.innerHTML = '🤖 กำลังเตรียมส่งงาน Meta AI...';
+
+        const userCustomPrompt = ($('#metaAiPrompt')?.value || '').trim();
+        const metaPromptText = `${userCustomPrompt ? userCustomPrompt + '\n' : ''}[สไตล์การเล่าเรื่อง]: ${styleGuidance}`;
+        const metaSceneCount = parseInt($('#metaAiSceneCount')?.value || '1', 10);
+        const metaClipsPerProduct = parseInt($('#metaAiClipsPerProduct')?.value || '1', 10);
+        const metaCharGender = $('#metaAiCharGender')?.value || 'female';
+        const charGender = (metaCharGender === 'male') ? 'ผู้ชาย' : 'ผู้หญิง';
+        const charLabel = (metaCharGender === 'male') ? 'นายแบบ' : 'นางแบบ';
+        const metaCharStyle = $('#metaAiCharStyle')?.value || 'casual';
+        const metaCharAge = $('#metaAiCharAge')?.value || 'young_adult';
+        const metaCharDesc = ($('#metaAiCharDesc')?.value || '').trim();
+        const isInfluencerMode = (factoryMode === 'influencer');
+        const hasCharRef = Boolean(influencerBase64);
+
+        const totalClipsPlanned = convertedProducts.length * metaClipsPerProduct * metaSceneCount;
+
+        addMonitorLog(`📋 แผนการผลิต: สินค้า ${convertedProducts.length} รายการ × ${metaClipsPerProduct} คลิป (คลิปละ ${metaSceneCount} ฉาก) = รวม ~${totalClipsPlanned} คลิป`);
+        const destLabel = factoryPostTarget === 'vault_only' ? '💾 เข้าคลัง (ไม่โพสต์)' : (factoryPostTarget === 'post_now' ? '🚀 โพสต์ทันที' : '⏳ ตั้งเวลา/เข้าคิว');
+        if (isInfluencerMode && hasCharRef) {
+          addMonitorLog(`⚙️ การตั้งค่า: 🧑 โหมดตัวละคร (${charLabel}${charGender}) ถือสินค้า | สไตล์: ${metaCharStyle} | ปลายทาง: ${destLabel}`);
+        } else {
+          addMonitorLog(`⚙️ การตั้งค่า: ✋ โหมดมือ${charGender} + รอยสัก | ปลายทาง: ${destLabel}`);
+        }
+
+        const META_AI_HOOK_VARIATIONS_HANDS = [
+          {
+            title: 'โชว์สินค้า (Showcase)',
+            anglePrompt: 'สไตล์คลิป: [Product Showcase] เน้นโชว์ตัวสินค้าจริง 3 มิติแบบ Close-up คมชัด มือหมุนพลิกตัวสินค้าช้าๆ ให้เห็นทุกมุมมอง ดีไซน์และวัสดุตัวเครื่องโดดเด่น น่าใช้ น่าสัมผัส'
+          },
+          {
+            title: 'แก้ปัญหา (Problem Solver)',
+            anglePrompt: 'สไตล์คลิป: [Problem Solver] เน้นมุมมองการใช้งานตัวสินค้าจริงในชีวิตประจำวัน มือถือตัวเครื่องพร้อมใช้งาน แสดงถึงความสะดวก ใช้ง่าย ตอบโจทย์ชีวิตจริง'
+          },
+          {
+            title: 'โปรเด็ดคุ้มค่า (Hot Deal)',
+            anglePrompt: 'สไตล์คลิป: [Hot Deal & Value] เน้นความน่าซื้อ ดึงดูดสายตา มือจับประคองตัวสินค้าจริงอย่างทะนุถนอม สื่อถึงสินค้าคุณภาพเกินราคาที่ต้องมีติดบ้าน'
+          },
+          {
+            title: 'แกะกล่องสัมผัสแรก (Unboxing)',
+            anglePrompt: 'สไตล์คลิป: [Unboxing / First Impression] ฟีลสัมผัสแรกที่ตื่นเต้น มือค่อยๆ หยิบตัวสินค้าจริงขึ้นมาโชว์ในมุมสวยที่สุด ให้ความรู้สึกพรีเมียม สดใหม่'
+          },
+          {
+            title: 'ไลฟ์สไตล์เรียลๆ (Lifestyle)',
+            anglePrompt: 'สไตล์คลิป: [Lifestyle & Everyday] เน้นบรรยากาศไลฟ์สไตล์เข้ากับสินค้า มือถือตัวสินค้าจริงอย่างเป็นธรรมชาติ เข้ากับสิ่งแวดล้อมรอบตัว ดูเรียล น่าเชื่อถือ'
+          }
+        ];
+
+        const META_AI_HOOK_VARIATIONS_INFLUENCER = [
+          {
+            title: 'ถือโชว์สินค้า',
+            anglePrompt: 'สไตล์คลิป: ตัวละคร (หน้าตาเหมือนรูป Reference เป๊ะ) ยิ้มอ่อนโยน ถือสินค้าจริง 3D ในมือทั้งสองข้างยกขึ้นโชว์ใกล้หน้า พูดภาษาไทยว่า "ตัวนี้ดีมากเลย ใช้แล้วชอบมาก" สินค้าอยู่ตรงกลางเฟรม'
+          },
+          {
+            title: 'ใช้งานจริง',
+            anglePrompt: 'สไตล์คลิป: ตัวละคร (หน้าตาเหมือนรูป Reference เป๊ะ) กำลังใช้สินค้าจริงในชีวิตประจำวัน เปิดฝา/กดปุ่ม/สาธิต พูดภาษาไทยบรรยายการใช้งาน ท่าทางผ่อนคลายเป็นธรรมชาติ'
+          },
+          {
+            title: 'แกะกล่อง',
+            anglePrompt: 'สไตล์คลิป: ตัวละคร (หน้าตาเหมือนรูป Reference เป๊ะ) ค่อยๆ หยิบสินค้าออกจากกล่อง สีหน้าตื่นเต้นดีใจ พูดภาษาไทยว่า "มาแล้วจ้า ของมาถึงแล้ว" ยกขึ้นโชว์กล้อง'
+          },
+          {
+            title: 'แนะนำสินค้า',
+            anglePrompt: 'สไตล์คลิป: ตัวละคร (หน้าตาเหมือนรูป Reference เป๊ะ) มองกล้องพร้อมยิ้ม มือถือสินค้า 3D ชูขึ้น อีกมือชี้แนะนำ พูดภาษาไทยว่า "แนะนำเลยค่ะ/ครับ ตัวนี้ต้องมี"'
+          },
+          {
+            title: 'ไลฟ์สไตล์',
+            anglePrompt: 'สไตล์คลิป: ตัวละคร (หน้าตาเหมือนรูป Reference เป๊ะ) นั่ง/ยืนในบรรยากาศสบายๆ ถือสินค้าใช้งานอย่างเป็นธรรมชาติ พูดภาษาไทยเล่าประสบการณ์ใช้สินค้า กล้อง Medium Shot'
+          }
+        ];
+
+        const META_AI_HOOK_VARIATIONS = (isInfluencerMode && hasCharRef) ? META_AI_HOOK_VARIATIONS_INFLUENCER : META_AI_HOOK_VARIATIONS_HANDS;
+
+        let metaVideosReceived = 0;
+        const savedTimestamps = new Set();
+        const batchStartTime = new Date().toISOString();
+        let completedSteps = 0;
+
+        const metaTab = metaTabs[0];
+
+        // Loop สินค้าแต่ละชิ้น
+        for (let pi = 0; pi < convertedProducts.length; pi++) {
+          if (isFactoryAborted) {
+            addMonitorLog('🛑 ได้รับคำสั่งยกเลิก — หยุดการผลิต', 'WARN');
+            break;
+          }
+
+          const prod = convertedProducts[pi];
+          const prodImgToSend = prod.assets[0]?.url || '';
+          const charImgToSend = influencerBase64 || '';
+
+          addMonitorLog(`📦 [สินค้า ${pi + 1}/${convertedProducts.length}] "${prod.name}" (เป้าหมาย: ${metaClipsPerProduct} คลิป)`);
+
+          // Loop คลิปแต่ละเวอร์ชัน (Variations)
+          for (let varIdx = 0; varIdx < metaClipsPerProduct; varIdx++) {
+            if (isFactoryAborted) break;
+
+            const hookVariation = META_AI_HOOK_VARIATIONS[varIdx % META_AI_HOOK_VARIATIONS.length];
+            const variationNote = metaClipsPerProduct > 1 ? `\n\n== มุมมองคลิป ==\n${hookVariation.anglePrompt}` : '';
+
+            addMonitorLog(`  🎬 คลิปที่ ${varIdx + 1}/${metaClipsPerProduct}: ${hookVariation.title}`);
+
+            // Loop ฉากในคลิปนั้น (Scenes)
+            for (let sceneIdx = 0; sceneIdx < metaSceneCount; sceneIdx++) {
+              if (isFactoryAborted) break;
+
+              // อัปเดต Production Monitor stats
+              const monProd = $('#monProduct');
+              if (monProd) monProd.textContent = `${pi + 1}/${convertedProducts.length}`;
+              const monIdea = $('#monIdea');
+              if (monIdea) monIdea.textContent = `คลิป ${varIdx + 1}/${metaClipsPerProduct}`;
+              const monScene = $('#monScene');
+              if (monScene) monScene.textContent = `ฉาก ${sceneIdx + 1}/${metaSceneCount}`;
+
+              const progressPct = Math.min(100, Math.round((completedSteps / Math.max(1, totalClipsPlanned)) * 100));
+              const monProgress = $('#monProgressBar');
+              if (monProgress) monProgress.style.width = `${progressPct}%`;
+
+              btn.innerHTML = `🤖 Meta AI กำลังสร้าง (${completedSteps + 1}/${totalClipsPlanned})...`;
+
+              const sceneLabel = metaSceneCount > 1 ? `\n\nฉากที่ ${sceneIdx + 1} จาก ${metaSceneCount}` : '';
+
+              // ═══ สร้าง Prompt ตามโหมด ═══
+              let fullPrompt;
+
+              if (isInfluencerMode && hasCharRef) {
+                // ─── INFLUENCER MODE: ตัวละครถือสินค้า ───
+                const styleMap = {
+                  casual: 'แต่งตัวสบายๆ เสื้อยืด/เสื้อเชิ้ต',
+                  smart: 'แต่งตัวดูดี มีสไตล์',
+                  cute: 'แต่งตัวน่ารัก สดใส สีพาสเทล',
+                  professional: 'แต่งตัวทางการ สุภาพ ดูน่าเชื่อถือ',
+                  sporty: 'แต่งตัวสปอร์ตี้ กระฉับกระเฉง',
+                };
+                const ageMap = {
+                  teen: 'วัยรุ่น อายุราว 16-20 ปี',
+                  young_adult: 'วัยผู้ใหญ่ตอนต้น อายุราว 22-28 ปี',
+                  adult: 'วัยผู้ใหญ่ อายุราว 28-35 ปี',
+                  mature: 'วัยกลางคน อายุราว 35-45 ปี',
+                };
+                const styleDesc = styleMap[metaCharStyle] || styleMap.casual;
+                const ageDesc = ageMap[metaCharAge] || ageMap.young_adult;
+                const charDescBlock = metaCharDesc
+                  ? `\n- ลักษณะเฉพาะของตัวละคร: ${metaCharDesc}`
+                  : '';
+
+                fullPrompt = `สร้างวิดีโอแนวตั้ง 9:16 ความยาวประมาณ 10 วินาที แบบ Photorealistic${sceneLabel}
+
+⚠️ ภาษา: ทุกอย่างในวิดีโอนี้ต้องเป็น "ภาษาไทย" เท่านั้น
+- เสียงพากย์/บทพูด/คำบรรยาย → ภาษาไทย 100%
+- ข้อความ/ตัวอักษรที่ปรากฏในวิดีโอ → ภาษาไทยเท่านั้น
+- ห้ามใช้ภาษาอังกฤษในเนื้อหาวิดีโอ
+
+[เป้าหมายสำคัญสูงสุด]:
+ตัวละคร${charGender}คนจริง 1 คน (ที่หน้าตาเหมือนรูป Reference ที่แนบมาเป๊ะๆ) กำลังถือ/ใช้ตัวสินค้าจริง 3 มิติ ในชีวิตประจำวัน
+สินค้าต้องเป็นวัตถุ 3D จริง — ห้ามสร้างเป็นการ์ด 2D / ป้ายโฆษณา / โบรชัวร์ / รูปถ่ายกระดาษ
+
+[ตัวละครหลัก — ต้องเหมือนรูป Reference แนบ]:
+🔴 สำคัญที่สุด: ตัวละครในวิดีโอต้องเป็น "คนเดียวกัน" กับรูปที่แนบมา
+- ใบหน้า โครงหน้า ตา จมูก ปาก คาง → ต้องเหมือนรูป Reference ให้มากที่สุด
+- ทรงผม สีผม ความยาวผม → ต้องตรงกับรูป Reference
+- สีผิว รูปร่าง → ต้องตรงกับรูป Reference${charDescBlock}
+- เพศ: ${charGender} | ${ageDesc}
+- การแต่งตัว: ${styleDesc}
+- สีหน้า: ยิ้มเป็นธรรมชาติ ดูเป็นมิตร
+- เฟรม: เห็นตั้งแต่ครึ่งตัวขึ้นไป
+- ตัวละครพูดภาษาไทยในวิดีโอ
+
+[วิเคราะห์สินค้าจากรูป Product]:
+สกัดเฉพาะ "ตัววัตถุสินค้าจริง" (ตัวเครื่อง บอดี้ โถ ฝาครอบ ฯลฯ) — ตัดป้ายกราฟิก 2D ป้ายส่วนลด กรอบข้อความออกทั้งหมด
+สินค้า: ${prod.name} ${prod.keywords}
+
+[สินค้า 3D]:
+- สินค้าเป็นวัตถุจริง 3D คงรูปทรง สัดส่วน สี ดีไซน์ตาม Reference
+- วัสดุสมจริง มีแสงสะท้อน เงา texture ผิว
+
+[ตัวละคร + สินค้า]:
+- ตัวละครถือสินค้าจริง 3D ในมืออย่างเป็นธรรมชาติ (ไม่ใช่ถือการ์ดกระดาษ)
+- มือสมจริง 5 นิ้วต่อมือ จับสินค้าถูกสรีระ
+- สินค้าอยู่ตำแหน่งเด่นในเฟรม
+
+[ฉาก & การเคลื่อนไหว]:
+- ฉากหลังสมจริง เข้ากับสินค้า แสงธรรมชาติ
+- ตัวละครขยับช้าๆ นุ่มนวล โชว์สินค้าให้เห็นมิติ 3D
+- กล้อง: โฟกัสที่ตัวละคร+สินค้า เบลอฉากหลังเล็กน้อย
+
+[ห้าม]:
+ห้ามสร้างการ์ด 2D, ห้ามกระดาษ, ห้ามโบรชัวร์, ห้ามป้ายโฆษณาลอย, ห้ามการ์ตูน, ห้ามมือผิดรูป, ห้ามนิ้วเกิน, ห้ามภาษาอังกฤษในเนื้อหาวิดีโอ
+
+${metaPromptText}${variationNote}`;
+
+              } else {
+                // ─── HANDS MODE: มือถือสินค้า (prompt เดิม) ───
+                const handGender = (metaCharGender === 'male') ? 'male' : 'female';
+                const handGenderTH = (metaCharGender === 'male') ? 'ผู้ชาย' : 'ผู้หญิง';
+
+                fullPrompt = `สร้างวิดีโอแนวตั้ง 9:16 ความยาวประมาณ 10 วินาที แบบ Photorealistic รีวิวสินค้าจริงในชีวิตประจำวัน${sceneLabel}
+
+⚠️ ภาษา: ทุกอย่างในวิดีโอนี้ต้องเป็น "ภาษาไทย" เท่านั้น
+- เสียงพากย์/บทพูด/คำบรรยาย → ภาษาไทย 100%
+- ข้อความ/ตัวอักษรที่ปรากฏในวิดีโอ → ภาษาไทยเท่านั้น
+- ห้ามใช้ภาษาอังกฤษในเนื้อหาวิดีโอ
+
+[เป้าหมายสำคัญสูงสุด]:
+สินค้าในคลิปต้องเป็น "วัตถุสินค้าจริง 3 มิติ" ที่มีมิติ ความหนา ความลึก และจับต้องได้จริงในมือคน
+ห้ามสร้างเป็นแผ่นการ์ด 2D / ห้ามถือแผ่นป้ายโฆษณา / ห้ามถือโบรชัวร์ / ห้ามถือรูปถ่ายกระดาษ
+
+[วิเคราะห์สินค้าจาก Reference]:
+ดึงเฉพาะ "ตัววัตถุสินค้าจริง" (ตัวเครื่อง โถแก้ว ฝาครอบ บอดี้สินค้า ปุ่มกด) — ตัดป้ายกราฟิก 2D ป้ายเซลล์ ป้ายส่วนลด กรอบข้อความสรรพคุณออกทั้งหมด
+สินค้า: ${prod.name} ${prod.keywords}
+
+[สินค้า 3D]:
+- สินค้าเป็นวัตถุจริง 3 มิติ คงรูปทรง สัดส่วน สีบอดี้ ดีไซน์ตาม Reference
+- วัสดุสมจริง: โถแก้วใสเงาสะท้อน บอดี้มี texture ผิวสัมผัส ชิ้นส่วนโลหะมีไฮไลต์แสง
+- มีมิติความลึก แสงตกกระทบ เงาใต้สินค้าสมจริง
+
+[มือ & การจับ]:
+- มือ${handGenderTH}จริง 2 ข้างเท่านั้น 5 นิ้วต่อมือ สัดส่วนสมจริง
+- ท่าทาง: ถือสินค้าจริงอย่างถูกสรีระ ประคอง/จับ/เปิดฝาอย่างทะนุถนอม
+- มีรอยสักแฟชั่น${handGenderTH}: ลายสักเส้นบาง หมึกดำ ที่หลังมือ ข้อมือ ท่อนแขน คงที่ตลอดคลิป
+- ห้ามเห็นหน้าหรือลำตัวคน เห็นเฉพาะมือ แขน สินค้า 3D และฉากหลัง
+
+[ฉาก & การเคลื่อนไหว]:
+- ฉากหลังสมจริง เข้ากับสินค้า (เคาน์เตอร์ครัว โต๊ะหินอ่อน คาเฟ่ สะอาด แสงธรรมชาติ)
+- มือขยับโชว์สินค้าช้าๆ นุ่มนวล หมุน/เอียงให้เห็นมิติ 3D รอบด้าน
+- กล้อง: Close-up นิ่ง โฟกัสคมชัดที่ตัวสินค้า
+
+[ห้าม]:
+ห้ามสร้างการ์ด 2D, ห้ามกระดาษ, ห้ามโบรชัวร์, ห้ามป้ายโฆษณาลอย, ห้ามการ์ตูน, ห้ามมือที่สาม, ห้ามมือผิดรูป, ห้ามภาษาอังกฤษในเนื้อหาวิดีโอ
+
+${metaPromptText}${variationNote}`;
+              }
+
+              // Clear exported videos ก่อนส่ง prompt ใหม่
+              const promptTimestamp = Date.now();
+              try {
+                await chrome.scripting.executeScript({
+                  target: { tabId: metaTab.id, allFrames: false },
+                  func: () => { window.__META_AI_EXPORT_VIDEOS__ = []; }
+                });
+              } catch (clearErr) {
+                addMonitorLog(`    ⚠️ ล้างคลิปเก่าไม่ได้: ${clearErr.message}`, 'WARN');
+              }
+
+              // ส่ง message ไปยัง meta.ai tab
+              try {
+                await chrome.tabs.sendMessage(metaTab.id, {
+                  type: 'META_AI_SEND_PROMPT',
+                  payload: {
+                    prompt: fullPrompt,
+                    characterImageBase64: charImgToSend,
+                    productImageBase64: prodImgToSend,
+                    productName: prod.name,
+                    productId: prod.tiktokProductId || '',
+                    productUrl: prod.productUrl || ''
+                  }
+                }, { frameId: 0 });
+                addMonitorLog(`    📨 ส่ง prompt (${hookVariation.title}${metaSceneCount > 1 ? ` ฉาก ${sceneIdx + 1}` : ''}) เรียบร้อย`);
+              } catch (sendErr) {
+                addMonitorLog(`    ⚠️ ส่ง prompt ไม่สำเร็จ: ${sendErr.message} — ลอง reload tab...`, 'WARN');
+                await chrome.tabs.reload(metaTab.id);
+                await new Promise(r => setTimeout(r, 4000));
+                try {
+                  await chrome.tabs.sendMessage(metaTab.id, {
+                    type: 'META_AI_SEND_PROMPT',
+                    payload: {
+                      prompt: fullPrompt,
+                      characterImageBase64: charImgToSend,
+                      productImageBase64: prodImgToSend,
+                      productName: prod.name,
+                      productId: prod.tiktokProductId || '',
+                      productUrl: prod.productUrl || ''
+                    }
+                  }, { frameId: 0 });
+                  addMonitorLog('    ✅ ส่ง prompt สำเร็จหลัง reload');
+                } catch (retryErr) {
+                  addMonitorLog(`    ❌ ไม่สามารถส่ง prompt: ${retryErr.message}`, 'ERROR');
+                  completedSteps++;
+                  continue;
+                }
+              }
+
+              // รอ Meta AI สร้างวิดีโอ
+              addMonitorLog(`    ⏳ รอ Meta AI สร้างคลิป... (เช็คทุก 5 วิ)`);
+
+              const metaResult = await new Promise((resolve) => {
+                let metaPollCount = 0;
+                const maxMetaPoll = 180; // 15 นาที
+                const metaPollTimer = setInterval(async () => {
+                  if (isFactoryAborted) {
+                    clearInterval(metaPollTimer);
+                    resolve({ success: false, aborted: true });
+                    return;
+                  }
+
+                  metaPollCount++;
+
+                  try {
+                    const results = await chrome.scripting.executeScript({
+                      target: { tabId: metaTab.id, allFrames: false },
+                      func: () => {
+                        const exported = window.__META_AI_EXPORT_VIDEOS__;
+                        return {
+                          exportCount: Array.isArray(exported) ? exported.length : 0,
+                          videos: Array.isArray(exported) ? exported.map(v => ({
+                            base64: v.base64,
+                            timestamp: v.timestamp,
+                            promptTimestamp: v.promptTimestamp || 0,
+                            thumbnail: v.thumbnail || ''
+                          })) : []
+                        };
+                      }
+                    });
+
+                    const metaData = results?.[0]?.result;
+                    if (metaData?.exportCount > 0) {
+                      for (let vi = 0; vi < metaData.videos.length; vi++) {
+                        const vid = metaData.videos[vi];
+                        if (!vid.base64 || vid.base64.length < 100) continue;
+
+                        if (vid.promptTimestamp && vid.promptTimestamp < promptTimestamp - 5000) {
+                          continue;
+                        }
+
+                        const dedupKey = `${vid.timestamp || ''}_${vid.base64.length}`;
+                        if (savedTimestamps.has(dedupKey)) continue;
+                        savedTimestamps.add(dedupKey);
+
+                        const itemId = `meta_vid_${Date.now()}_${vi}`;
+                        const videoKey = `phimbot_video_${itemId}`;
+
+                        await chrome.storage.local.set({ [videoKey]: vid.base64 });
+
+                        const storeNow = await chrome.storage.local.get(['phimbot_media_vault']);
+                        const vaultNow = storeNow.phimbot_media_vault || [];
+                        const itemPlatform = prod.platform || ((prod.productUrl || '').includes('shopee') ? 'shopee' : 'tiktok');
+                        const clipTitle = `${prod.name} [คลิป ${varIdx + 1}/${metaClipsPerProduct} - ${hookVariation.title}${metaSceneCount > 1 ? ` ฉาก ${sceneIdx + 1}` : ''}]`;
+                        const pHashtags = resolveProductHashtags(prod);
+                        const pImg = resolveProductImage(prod);
+                        const vThumb = vid.thumbnail || await generateVideoThumbnail(vid.base64);
+
+                        vaultNow.unshift({
+                          id: itemId,
+                          productName: prod.name,
+                          headline: clipTitle,
+                          productId: prod.tiktokProductId || '',
+                          productUrl: prod.productUrl || '',
+                          videoBase64: '',
+                          videoStorageKey: videoKey,
+                          videoBase64Size: vid.base64.length,
+                          thumbnail: vThumb,
+                          productImage: pImg,
+                          caption: prod.name,
+                          hashtags: pHashtags,
+                          platform: itemPlatform,
+                          source: 'meta_ai',
+                          posted: { tiktok: false, reels: false, shopee: false },
+                          createdAt: new Date().toISOString()
+                        });
+                        await chrome.storage.local.set({ phimbot_media_vault: vaultNow });
+                        metaVideosReceived++;
+
+                        // Preview in monitor
+                        const monVid = $('#monVideoPreview');
+                        if (monVid && vid.base64) {
+                          monVid.innerHTML = `<video src="${vid.base64}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;border-radius:8px;"></video>`;
+                        }
+
+                        addMonitorLog(`    💾 บันทึกคลิป "${clipTitle}" (${(vid.base64.length / 1024 / 1024).toFixed(1)} MB) เข้า Vault แล้ว`, 'SUCCESS');
+                      }
+
+                      // Clear exported videos
+                      await chrome.scripting.executeScript({
+                        target: { tabId: metaTab.id, allFrames: false },
+                        func: () => { window.__META_AI_EXPORT_VIDEOS__ = []; }
+                      });
+
+                      clearInterval(metaPollTimer);
+                      resolve({ success: true, count: metaData.exportCount });
+                      return;
+                    }
+
+                    if (metaPollCount % 12 === 0) {
+                      const elapsed = Math.round(metaPollCount * 5 / 60);
+                      addMonitorLog(`    ⏳ ผ่านไปแล้ว ${elapsed} นาที — กำลังรอ Meta AI ผลิตวิดีโอ...`);
+                    }
+
+                    if (metaPollCount >= maxMetaPoll) {
+                      clearInterval(metaPollTimer);
+                      addMonitorLog('    ⌛ หมดเวลารอ Meta AI สำหรับฉากนี้ (15 นาที)', 'WARN');
+                      resolve({ success: false, count: 0 });
+                    }
+                  } catch (pollErr) {
+                    console.warn('[AutoPilot Meta] Poll error:', pollErr);
+                  }
+                }, 5000);
+              });
+
+              completedSteps++;
+              const curPct = Math.min(100, Math.round((completedSteps / Math.max(1, totalClipsPlanned)) * 100));
+              const monBar = $('#monProgressBar');
+              if (monBar) monBar.style.width = `${curPct}%`;
+
+              // พัก 4 วินาทีเพื่อให้ Meta AI หน้าจอคลายตัวก่อนส่งรอบถัดไป
+              if (!isFactoryAborted && completedSteps < totalClipsPlanned) {
+                addMonitorLog('    ☕ พัก 4 วินาที ก่อนส่งงานต่อไป...');
+                await new Promise(r => setTimeout(r, 4000));
+              }
+            } // end scene loop
+          } // end variation loop
+        } // end product loop
+
+        // ═══ Meta AI Step 4: Auto-Post ═══
+        if (metaVideosReceived > 0) {
+          addMonitorLog(`📤 สเต็ป 4: ดำเนินการโพสต์ตามเป้าหมาย (${factoryPostTarget})...`, 'POST');
+          btn.innerHTML = '📤 สเต็ป 4: กำลังดำเนินการโพสต์...';
+          showToast(`📤 สเต็ป 4/4: ${factoryPostTarget === 'vault_only' ? 'เก็บในคลัง' : 'เตรียมโพสต์'}...`);
+          const postResult = await executeAutoPostTarget(factoryPostTarget, batchStartTime);
+          // สรุปผลสุดท้าย
+          const parts = [`ผลิต ${metaVideosReceived} คลิป`];
+          if (postResult?.tiktok > 0) parts.push(`TikTok ${postResult.tiktok}`);
+          if (postResult?.shopee > 0) parts.push(`Shopee ${postResult.shopee}`);
+          if (postResult?.vaultOnly) parts.push('เก็บในคลัง');
+          if (postResult?.cancelled) parts.push('ยกเลิกโพสต์');
+          addMonitorLog(`🏁 จบ Auto-Pilot (Meta AI): ${parts.join(' | ')}`, 'SUCCESS');
+          showToast(`🎉 สำเร็จ! ${parts.join(' | ')}`, 6000);
+          const monBar = $('#monProgressBar');
+          if (monBar) monBar.style.width = '100%';
+          setMonitorCompletedState(metaVideosReceived);
+        } else {
+          addMonitorLog('ℹ️ ไม่มีวิดีโอใหม่จาก Meta AI สำหรับโพสต์');
+          showToast('ℹ️ ไม่มีวิดีโอใหม่', 4000);
+          if (isFactoryAborted) {
+            setMonitorAbortedState();
+          } else {
+            setMonitorCompletedState(0);
+          }
+        }
+
+        // Skip Google Flow pipeline
+        isFactoryBusy = false;
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+        return; // ← ออกจาก handler เลย ไม่เข้า Google Flow pipeline
+      }
+
+      // ╔═══════════════════════════════════════════════════════════════════╗
+      // ║  GOOGLE FLOW PIPELINE (Ai SALER PRO)                            ║
+      // ╚═══════════════════════════════════════════════════════════════════╝
+
+      // Helper: ติดตั้ง/อัปเดต Video Interceptor v2 เข้าทุก frame ของ Google Flow (รวมถึง blob: iframe)
+      const installOrUpdateFlowInterceptor = async () => {
+        for (const tab of flowTabs) {
+          try {
+            await chrome.scripting.executeScript({
+              target: { tabId: tab.id, allFrames: true },
+              world: 'MAIN',
+              func: (productsList, targetScenes) => {
+                // อัปเดตข้อมูลสินค้าและรีเซ็ตคิวสำหรับรอบการผลิตใหม่ทุกครั้ง
+                window.__PHIMBOT_PRODUCTS__ = Array.isArray(productsList) ? productsList : [];
+                window.__PHIMBOT_CURRENT_PRODUCT__ = window.__PHIMBOT_PRODUCTS__[0] || {};
+                window.__PHIMBOT_TARGET_SCENES__ = Number(targetScenes) || 1;
+                window.__FLOW_EXPORT_VIDEOS__ = [];
+                window.__FLOW_SCENE_FALLBACK_VIDEOS__ = [];
+                window.__PHIMBOT_CAPTURED_SIGS__ = new Set();
+                window.__PHIMBOT_FALLBACK_SIGS__ = new Set();
+
+                // ปรับแต่ง Margin & Padding ของหน้าต่าง Tool ใน iframe ให้สวยงาม ไม่ซ้อนทับกัน
+                try {
+                  if (location.href.includes('scf.usercontent.goog') || document.getElementById('tiktok-product-id') || document.querySelector('[data-state]')) {
+                    if (!document.getElementById('phimbot-flow-tool-spacing-fix')) {
+                      const style = document.createElement('style');
+                      style.id = 'phimbot-flow-tool-spacing-fix';
+                      style.textContent = `
+                        body { padding: 14px 18px !important; box-sizing: border-box !important; }
+                        section, [class*="card"], [class*="panel"] { margin-bottom: 14px !important; }
+                        button, [role="button"] { margin: 2px !important; }
+                        input, select, textarea { margin-top: 4px !important; margin-bottom: 6px !important; }
+                        [class*="aspect-[9/16]"] { max-height: 44vh !important; width: auto !important; margin-top: 36px !important; margin-bottom: 12px !important; }
+                      `;
+                      (document.head || document.documentElement).appendChild(style);
+                    }
+                  }
+                } catch (_) {}
+
+                // ฟังก์ชันช่วยดึงข้อมูลสินค้าที่ Tool กำลังผลิตอยู่จริงในขณะนั้น
+                window.__phimbotResolveProductMeta = () => {
+                  const cleanId = (v) => {
+                    const s = String(v || '').trim();
+                    if (!s || /^(PID_)?UNKNOWN$/i.test(s) || /^null$/i.test(s) || /^undefined$/i.test(s)) return '';
+                    return s.replace(/^PID_/i, '').trim();
+                  };
+                  const list = window.__PHIMBOT_PRODUCTS__ || [];
+                  const domId = cleanId(document.getElementById('tiktok-product-id')?.value);
+                  const domName = String(document.getElementById('active-product-name')?.value || '').trim();
+                  let matched = null;
+                  if (domId) {
+                    matched = list.find(p => cleanId(p.tiktokProductId) === domId);
+                  }
+                  if (!matched && domName) {
+                    matched = list.find(p => String(p.name || '').trim() === domName);
+                  }
+                  if (!matched) {
+                    matched = window.__PHIMBOT_CURRENT_PRODUCT__ || list[0] || {};
+                  }
+                  const pName = domName || matched.name || 'สินค้าจาก AI SALER PRO';
+                  const pId = domId || cleanId(matched.tiktokProductId);
+                  const pUrl = matched.productUrl || '';
+                  const platform = matched.platform || (pUrl.includes('shopee') ? 'shopee' : 'tiktok');
+                  return { pName, pId, pUrl, platform };
+                };
+
+                // ฟังก์ชันกลางสำหรับบันทึก base64 วิดีโอลงคิวส่งออก (หรือคิวสำรองกรณีแยกฉาก)
+                window.__phimbotPushBase64Video = (rawBase64, sourceLabel = 'interceptor', isSceneFallback = false) => {
+                  try {
+                    if (!rawBase64 || typeof rawBase64 !== 'string') return false;
+                    let base64 = rawBase64.trim();
+                    if (base64.startsWith('data:application/octet-stream')) {
+                      base64 = base64.replace('data:application/octet-stream', 'data:video/mp4');
+                    } else if (!base64.startsWith('data:')) {
+                      base64 = 'data:video/mp4;base64,' + base64;
+                    }
+                    if (base64.length < 60000) return false;
+
+                    const sig = `${base64.length}_${base64.slice(80, 160)}_${base64.slice(-80)}`;
+                    const sigSet = isSceneFallback ? window.__PHIMBOT_FALLBACK_SIGS__ : window.__PHIMBOT_CAPTURED_SIGS__;
+                    if (sigSet.has(sig)) {
+                      return false;
+                    }
+                    sigSet.add(sig);
+
+                    const { pName, pId, pUrl, platform } = window.__phimbotResolveProductMeta();
+                    const payload = {
+                      productId: pId,
+                      productName: pName,
+                      productUrl: pUrl,
+                      headline: pName + ' รีวิวของดีบอกต่อ',
+                      videoBase64: base64,
+                      videoUrl: '',
+                      thumbnail: '',
+                      caption: pName + ' รีวิวของดีบอกต่อ',
+                      hashtags: platform === 'shopee' ? '#ShopeeTH #ShopeeVideo #รีวิว' : '#TikTokShop #ของดีบอกต่อ #รีวิว',
+                      platform,
+                      source: sourceLabel,
+                      isFallback: isSceneFallback,
+                      capturedAt: Date.now()
+                    };
+
+                    if (isSceneFallback) {
+                      window.__FLOW_SCENE_FALLBACK_VIDEOS__.push(payload);
+                      console.log(`[PhimBot Interceptor v2] 🛡️ Stored scene fallback (${sourceLabel}) → total fallbacks:`, window.__FLOW_SCENE_FALLBACK_VIDEOS__.length);
+                    } else {
+                      window.__FLOW_EXPORT_VIDEOS__.push(payload);
+                      const msg = { type: 'EXT_EXPORT_VIDEO', payload };
+                      window.postMessage(msg, '*');
+                      try { window.parent.postMessage(msg, '*'); } catch (_) {}
+                      console.log(`[PhimBot Interceptor v2] 🎯 Captured FINAL video (${sourceLabel}) → total exported:`, window.__FLOW_EXPORT_VIDEOS__.length);
+                    }
+                    return true;
+                  } catch (err) {
+                    console.warn('[PhimBot Interceptor v2] pushBase64 error:', err);
+                    return false;
+                  }
+                };
+
+                window.__phimbotExportVideoBlob = (blobOrBytes, sourceLabel = 'interceptor', isSceneFallback = false) => {
+                  try {
+                    const blob = blobOrBytes instanceof Blob
+                      ? (blobOrBytes.type ? blobOrBytes : new Blob([blobOrBytes], { type: 'video/mp4' }))
+                      : new Blob([blobOrBytes], { type: 'video/mp4' });
+                    if (blob.size < 45000) return;
+                    const reader = new FileReader();
+                    reader.__phimbotInternal = true;
+                    reader.onload = () => {
+                      window.__phimbotPushBase64Video(reader.result, sourceLabel, isSceneFallback);
+                    };
+                    reader.readAsDataURL(blob);
+                  } catch (_) {}
+                };
+
+                // ฟังก์ชันดักจับ Flow.download (เรียกเมื่อ finalizeCampaign รวมฉากเสร็จสมบูรณ์)
+                const hookFlowDownloadObj = () => {
+                  try {
+                    if (window.Flow && typeof window.Flow.download === 'function' && !window.Flow.download.__phimbotHooked) {
+                      const origDl = window.Flow.download.bind(window.Flow);
+                      const wrappedDl = async function(opts) {
+                        try {
+                          if (opts && opts.base64 && (!opts.mimeType || opts.mimeType.includes('video') || String(opts.filename || '').endsWith('.mp4'))) {
+                            console.log('[PhimBot Interceptor v2] 🎯 Intercepted Flow.download:', opts.filename);
+                            window.__phimbotPushBase64Video(opts.base64, 'flow_download', false);
+                          }
+                        } catch (e) {
+                          console.warn('[PhimBot Interceptor v2] Flow.download hook warn:', e);
+                        }
+                        return origDl(opts);
+                      };
+                      wrappedDl.__phimbotHooked = true;
+                      window.Flow.download = wrappedDl;
+                    }
+                  } catch (_) {}
+                };
+                hookFlowDownloadObj();
+
+                if (window.__PHIMBOT_VIDEO_INTERCEPTOR_V2__) return 'updated_v2';
+                window.__PHIMBOT_VIDEO_INTERCEPTOR_V2__ = true;
+
+                // คอยตรวจจับหาก window.Flow ถูกสร้างทีหลัง
+                setInterval(hookFlowDownloadObj, 1000);
+
+                // 1. ดักจับ FileReader.prototype.readAsDataURL
+                // ใน App.tsx: finalizeCampaign เท่านั้นที่ใช้ FileReader.readAsDataURL(new Blob([res])) เพื่อแปลงไฟล์รวม out.mp4!
+                const origReadAsDataURL = FileReader.prototype.readAsDataURL;
+                FileReader.prototype.readAsDataURL = function(blob) {
+                  if (!this.__phimbotInternal && blob instanceof Blob && blob.size > 45000) {
+                    const isVideoOrRaw = !blob.type || blob.type.startsWith('video/') || blob.type === 'application/octet-stream';
+                    if (isVideoOrRaw) {
+                      this.addEventListener('loadend', () => {
+                        try {
+                          if (typeof this.result === 'string' && this.result.length > 60000) {
+                            console.log('[PhimBot Interceptor v2] 🎯 Captured merged video via FileReader.readAsDataURL:', blob.size, 'bytes');
+                            window.__phimbotPushBase64Video(this.result, 'filereader_finalize_mp4', false);
+                          }
+                        } catch (_) {}
+                      }, { once: true });
+                    }
+                  }
+                  return origReadAsDataURL.apply(this, arguments);
+                };
+
+                // 2. ดักจับ FFmpeg Web Worker (บังคับแปลงเสียง 44.1kHz Stereo + ดึงไฟล์ out.mp4 ที่รวมฉากเสร็จแล้วโดยตรง)
+                const origWorkerPost = Worker.prototype.postMessage;
+                Worker.prototype.postMessage = function(msg, transfer) {
+                  try {
+                    if (msg && msg.type === 'EXEC' && msg.data && Array.isArray(msg.data.args)) {
+                      const args = msg.data.args;
+                      const copyIdx = args.indexOf('-c');
+                      if (args.includes('out.mp4') && copyIdx !== -1 && args[copyIdx + 1] === 'copy') {
+                        const newArgs = [
+                          ...args.slice(0, copyIdx),
+                          '-c:v', 'copy',
+                          '-c:a', 'aac',
+                          '-ar', '44100',
+                          '-ac', '2',
+                          '-b:a', '128k',
+                          ...args.slice(copyIdx + 2)
+                        ];
+                        msg.data.args = newArgs;
+                        console.log('[PhimBot Interceptor v2] 🔊 Upgraded FFmpeg concat args to 44.1kHz Stereo:', newArgs.join(' '));
+                      }
+                    }
+                    if (msg && msg.type === 'READ_FILE' && msg.data && msg.data.path === 'out.mp4') {
+                      const reqId = msg.id;
+                      const onWorkerMsg = (ev) => {
+                        if (ev.data && ev.data.id === reqId) {
+                          this.removeEventListener('message', onWorkerMsg);
+                          if (ev.data.data instanceof Uint8Array && ev.data.data.byteLength > 45000) {
+                            console.log('[PhimBot Interceptor v2] 🎯 Captured final merged out.mp4 from FFmpeg Worker:', ev.data.data.byteLength);
+                            window.__phimbotExportVideoBlob(ev.data.data, 'ffmpeg_out_mp4', false);
+                          }
+                        }
+                      };
+                      this.addEventListener('message', onWorkerMsg);
+                    }
+                  } catch (wErr) {
+                    console.warn('[PhimBot Interceptor v2] Worker hook warn:', wErr);
+                  }
+                  return origWorkerPost.apply(this, arguments);
+                };
+
+                // 3. ดักจับ URL.createObjectURL — ถ้า 1 ฉากให้ส่งออกเลย แต่ถ้าหลายฉากให้เก็บเป็น Scene Fallback เผื่อ FFmpeg ล้มเหลว
+                const origCreate = URL.createObjectURL.bind(URL);
+                URL.createObjectURL = function(blob) {
+                  const url = origCreate(blob);
+                  try {
+                    if (blob instanceof Blob && blob.type && blob.type.startsWith('video/') && blob.size > 45000) {
+                      if ((window.__PHIMBOT_TARGET_SCENES__ || 1) <= 1) {
+                        window.__phimbotExportVideoBlob(blob, 'createObjectURL_single', false);
+                      } else {
+                        window.__phimbotExportVideoBlob(blob, 'createObjectURL_scene_fallback', true);
+                        console.log('[PhimBot Interceptor v2] ⏳ Multi-scene preview stored in fallback, waiting for merged out.mp4...');
+                      }
+                    }
+                  } catch (_) {}
+                  return url;
+                };
+
+                // 4. ดักจับ <a>.click() — จับ auto-download
+                const origClick = HTMLAnchorElement.prototype.click;
+                HTMLAnchorElement.prototype.click = function() {
+                  if (this.download && this.href && this.href.startsWith('blob:')) {
+                    fetch(this.href).then(r => r.blob()).then(blob => {
+                      if (blob.size > 45000) window.__phimbotExportVideoBlob(blob, 'anchor_download', false);
+                    }).catch(() => {});
+                  }
+                  return origClick.call(this);
+                };
+
+                // 5. ดักจับ Blob constructor สำหรับ raw Uint8Array MP4 bytes จาก finalizeCampaign
+                const OrigBlob = window.Blob;
+                window.Blob = function(parts, options) {
+                  const blob = new OrigBlob(parts, options);
+                  try {
+                    if (blob.size > 45000 && Array.isArray(parts) && parts[0] instanceof Uint8Array && parts[0].byteLength > 45000) {
+                      const b = parts[0];
+                      // ตรวจ MP4 'ftyp' header ที่ byte 4..7
+                      if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+                        // ถ้าไม่ได้มาจาก b64ToUint8 ของฉากย่อย หรือถ้ามีแค่ 1 ฉาก
+                        if (!options?.type || (window.__PHIMBOT_TARGET_SCENES__ || 1) <= 1) {
+                          window.__phimbotExportVideoBlob(blob, 'finalize_mp4_blob', false);
+                        }
+                      }
+                    }
+                  } catch (_) {}
+                  return blob;
+                };
+                window.Blob.prototype = OrigBlob.prototype;
+
+                console.log('[PhimBot Interceptor v2] ✅ Ready — Flow.download + FileReader + FFmpeg out.mp4 + Scene Fallback');
+                return 'injected_v2';
+              },
+              args: [convertedProducts, sceneCount]
+            });
+          } catch (e) {
+            console.warn('[AutoPilot v3] Interceptor inject warn:', e);
+          }
+        }
+      };
+
+      // ═══════════ สเต็ป 2: ติดตั้ง Video Interceptor ล่วงหน้า + ส่งข้อมูลไปยัง Tool ═══════════
+      addMonitorLog('🎬 กำลังติดตั้ง Video Interceptor v2 ล่วงหน้าก่อนเริ่มสายการผลิต...');
+      await installOrUpdateFlowInterceptor();
+
+      addMonitorLog('⚡ สเต็ป 2: ส่งข้อมูลเข้า Ai SALER PRO + ทริกเกอร์ autoRun...');
+      addMonitorLog(`📊 ค่าที่ส่ง: campaignCount=${ideaCount}, sceneCount=${sceneCount}, duration=${duration}`);
+      btn.innerHTML = '⚡ ส่งข้อมูลเข้า Tool...';
+
+      const flowBatchStartTime = new Date().toISOString(); // จำเวลาเริ่ม batch สำหรับกรองคลิปใหม่ใน Step 4
+
+      if (typeof window.sendDataToFlowTool === 'function') {
+        const sendRes = await window.sendDataToFlowTool(toolPayload);
+        if (sendRes?.detail?.foundElement) {
+          addMonitorLog('✅ ซิงค์ข้อมูลเข้าสู่ Tool เรียบร้อย — Tool จะเริ่ม Pipeline อัตโนมัติ');
+        } else {
+          addMonitorLog('⚠️ ส่งข้อมูลแล้วแต่ไม่พบ element ใน Tool — อาจต้องเปิดหน้า Tool ให้ถูกต้อง');
+        }
+      } else {
+        throw new Error('sendDataToFlowTool ยังไม่พร้อม — กรุณารีโหลด Extension');
+      }
+
+      // ═══════════ สเต็ป 2.5: Force-inject ค่าเข้า iframe ของ Tool โดยตรง ═══════════
+      for (const tab of flowTabs) {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            world: 'MAIN',
+            func: (cCount, sCount, dur, targetGender) => {
+              window.campaignCount = cCount;
+              window.sceneCount = sCount;
+              window.ideaCount = cCount;
+              window.targetSetCount = cCount;
+              window.scenes = sCount;
+              window.duration = dur;
+              window.voiceGender = targetGender;
+
+              if (window.__PHIMBOT_INJECTED_PAYLOAD__?.settings) {
+                window.__PHIMBOT_INJECTED_PAYLOAD__.settings.campaignCount = cCount;
+                window.__PHIMBOT_INJECTED_PAYLOAD__.settings.sceneCount = sCount;
+                window.__PHIMBOT_INJECTED_PAYLOAD__.settings.ideaCount = cCount;
+                window.__PHIMBOT_INJECTED_PAYLOAD__.settings.targetSetCount = cCount;
+                window.__PHIMBOT_INJECTED_PAYLOAD__.settings.scenes = sCount;
+                window.__PHIMBOT_INJECTED_PAYLOAD__.settings.gender = targetGender;
+                window.__PHIMBOT_INJECTED_PAYLOAD__.settings.voiceGender = targetGender;
+              }
+              if (window.__PHIMBOT_INJECTED_PAYLOAD__?.influencer) {
+                window.__PHIMBOT_INJECTED_PAYLOAD__.influencer.gender = targetGender;
+                window.__PHIMBOT_INJECTED_PAYLOAD__.influencer.voiceGender = targetGender;
+              }
+
+              const countSelectors = [
+                'campaignCount', 'campaign-count', 'campaign_count',
+                'sceneCount', 'scene-count', 'scene_count',
+                'ideaCount', 'idea-count', 'idea_count',
+                'targetSetCount', 'target-set-count'
+              ];
+              countSelectors.forEach(sel => {
+                const el = document.getElementById(sel) || document.querySelector(`[name="${sel}"]`);
+                if (el) {
+                  const val = sel.toLowerCase().includes('scene') ? sCount : cCount;
+                  try {
+                    const tag = (el.tagName || '').toUpperCase();
+                    const win = el.ownerDocument?.defaultView || window;
+                    const proto = tag === 'SELECT'
+                      ? win.HTMLSelectElement?.prototype
+                      : (tag === 'TEXTAREA' ? win.HTMLTextAreaElement?.prototype : (tag === 'INPUT' ? win.HTMLInputElement?.prototype : null));
+                    const nativeSet = proto ? Object.getOwnPropertyDescriptor(proto, 'value')?.set : null;
+                    if (nativeSet) {
+                      nativeSet.call(el, String(val));
+                    } else if ('value' in el) {
+                      el.value = String(val);
+                    }
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                  } catch (_) {
+                    try { el.value = String(val); } catch (__) {}
+                  }
+                }
+              });
+
+              const clickGenderBtn = () => {
+                const matchText = targetGender === 'male' ? /ชาย\s*\(ครับ\)|^ชาย$/i : /หญิง\s*\(ค่ะ\)|^หญิง$/i;
+                const btns = Array.from(document.querySelectorAll('button, [role="button"], [role="tab"]'));
+                for (const b of btns) {
+                  const txt = (b.innerText || b.textContent || '').replace(/\s+/g, ' ').trim();
+                  if (matchText.test(txt)) {
+                    b.click();
+                  }
+                }
+              };
+              clickGenderBtn();
+              setTimeout(clickGenderBtn, 400);
+              setTimeout(clickGenderBtn, 1000);
+              setTimeout(clickGenderBtn, 2000);
+            },
+            args: [ideaCount, sceneCount, duration, resolvedGender]
+          });
+        } catch (e) {
+          console.warn('[AutoPilot v3] Force-inject failed for tab:', tab.id, e);
+        }
+      }
+      addMonitorLog(`✅ Force-inject ค่า campaignCount=${ideaCount}, sceneCount=${sceneCount}, เพศ=${resolvedGender === 'male' ? 'ชาย (ครับ)' : 'หญิง (ค่ะ)'} เข้า Tool ทุก iframe`);
+
+      // ยืนยันว่า Video Interceptor v2 พร้อมทำงานในทุก frame
+      await installOrUpdateFlowInterceptor();
+      addMonitorLog('✅ Video Interceptor v2 (ดักจับวิดีโอรวมฉาก + Fallback อัตโนมัติ) พร้อมทำงาน');
+
+      // ═══════════ สเต็ป 3: Monitor Progress & ดึงวิดีโอเข้าคลังแบบ Real-time ทุก 5 วินาที ═══════════
+      addMonitorLog('⏳ สเต็ป 3: Ai SALER PRO กำลังทำงาน — ติดตามสถานะและดึงวิดีโอเข้าคลังอัตโนมัติ...');
+      btn.innerHTML = '🎬 Tool กำลังผลิตวิดีโอ...';
+
+      const STATE_LABELS = {
+        'idle': '⏸️ รอคำสั่ง',
+        'brainstorming': '💡 กำลังคิดไอเดีย + เขียนบท',
+        'generating_video': '🎬 กำลังสร้างรูปภาพ + วิดีโอ',
+        'done': '✅ ผลิตเสร็จสมบูรณ์'
+      };
+
+      let lastState = '';
+      let pollCount = 0;
+      let videosReceived = 0;
+      let wasGenerating = false;
+      let activeGenerationTicks = 0;
+      let isDraining = false;
+      const savedBatchVideoSigs = new Set();
+      const expectedVideos = Math.max(1, toolPayload.products.length * ideaCount);
+      const maxPollCount = 360; // 30 นาที (5s × 360)
+
+      // Helper: บันทึกรายการวิดีโอที่ดึงมาจาก Tool ลงคลังวีดีโอ (Two-Tier Storage) ทันที
+      const saveCapturedVideoToVault = async (vid, indexInBatch) => {
+        if (!vid || !vid.videoBase64) return false;
+        let vb64 = vid.videoBase64.trim();
+        if (vb64.startsWith('data:application/octet-stream')) {
+          vb64 = vb64.replace('data:application/octet-stream', 'data:video/mp4');
+        } else if (!vb64.startsWith('data:')) {
+          vb64 = 'data:video/mp4;base64,' + vb64;
+        }
+        if (vb64.length < 60000) return false;
+
+        const sig = `${vb64.length}_${vb64.slice(80, 160)}_${vb64.slice(-80)}`;
+        if (savedBatchVideoSigs.has(sig)) return false;
+        savedBatchVideoSigs.add(sig);
+
+        // จับคู่ข้อมูลสินค้าและรหัสสินค้าสำหรับติดตะกร้าให้แม่นยำ (รองรับทั้ง factoryProducts และ phimbot_products)
+        const fallbackProd = convertedProducts[indexInBatch % Math.max(1, convertedProducts.length)] || convertedProducts[0] || {};
+        const matchedProd = convertedProducts.find(p =>
+          (cleanProductId(vid.productId) && cleanProductId(p.tiktokProductId) === cleanProductId(vid.productId)) ||
+          (vid.productName && p.name === vid.productName)
+        ) || fallbackProd;
+
+        const catalogResolved = await resolveCatalogProduct({
+          productId: cleanProductId(vid.productId) || cleanProductId(matchedProd.tiktokProductId),
+          productName: vid.productName || matchedProd.name || '',
+          productUrl: vid.productUrl || matchedProd.productUrl || '',
+          platform: vid.platform || matchedProd.platform || '',
+          productImage: matchedProd.image || '',
+        }, indexInBatch);
+
+        const resolvedPid = catalogResolved.productId || cleanProductId(matchedProd.tiktokProductId);
+        const cleanProductName = catalogResolved.productName || vid.productName || matchedProd.name || 'สินค้าจาก AI SALER PRO';
+        const cleanProductUrl = catalogResolved.productUrl || vid.productUrl || matchedProd.productUrl || '';
+        const cleanPlatform = catalogResolved.platform || vid.platform || matchedProd.platform || (cleanProductUrl.includes('shopee') ? 'shopee' : 'tiktok');
+
+        addMonitorLog(`💾 กำลังบันทึกคลิป "${cleanProductName}" (PID: ${resolvedPid || 'N/A'}, ${(vb64.length / 1024 / 1024).toFixed(1)} MB) เข้าคลังวีดีโอ...`);
+
+        try {
+          const itemId = `vid_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          const videoKey = `phimbot_video_${itemId}`;
+
+          // 1) เก็บ video base64 ใน key แยก
+          await chrome.storage.local.set({ [videoKey]: vb64 });
+
+          // 2) อ่านคลังวีดีโอปัจจุบันแล้วเพิ่มรายการใหม่
+          const storeNow = await chrome.storage.local.get(['phimbot_media_vault']);
+          const vault = storeNow.phimbot_media_vault || [];
+
+          const flowHashtags = resolveProductHashtags({ ...vid, productId: resolvedPid, productName: cleanProductName });
+          const pImg = catalogResolved.productImage || resolveProductImage({ ...vid, productId: resolvedPid, productName: cleanProductName });
+          const vThumb = vid.thumbnail || await generateVideoThumbnail(vb64);
+
+          const newItem = {
+            id: itemId,
+            productId: resolvedPid,
+            productName: cleanProductName,
+            productUrl: cleanProductUrl,
+            headline: vid.headline || `${cleanProductName} รีวิวของดีบอกต่อ`,
+            videoBase64: '', // เก็บแยกใน videoStorageKey เพื่อความเร็วและไม่ติดโควตา
+            videoStorageKey: videoKey,
+            videoBase64Size: vb64.length,
+            videoUrl: vid.videoUrl || '',
+            thumbnail: vThumb,
+            productImage: pImg,
+            caption: vid.caption || `${cleanProductName} รีวิวของดีบอกต่อ`,
+            hashtags: flowHashtags,
+            platform: cleanPlatform,
+            source: vid.source || 'flow_autopilot',
+            createdAt: new Date().toISOString(),
+            posted: { tiktok: false, reels: false, shopee: false }
+          };
+
+          vault.unshift(newItem);
+          await chrome.storage.local.set({ phimbot_media_vault: vault });
+
+          videosReceived++;
+          const pct = Math.min(100, Math.round((videosReceived / expectedVideos) * 100));
+          const bar = $('#monProgressBar');
+          if (bar) bar.style.width = `${pct}%`;
+
+          // แสดงตัวอย่างวิดีโอสดใน Production Monitor ของ Extension
+          const monVid = $('#monVideoPreview');
+          if (monVid) {
+            monVid.innerHTML = `<video src="${vb64}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;border-radius:8px;"></video>`;
+          }
+
+          addMonitorLog(`✅ บันทึก "${cleanProductName}" เข้าคลังวีดีโอสำเร็จ! (${videosReceived}/${expectedVideos} คลิป | รหัสตะกร้า: ${cleanProductId || 'ไม่มี'})`, 'SUCCESS');
+          try { await refreshVault(); } catch (_) {}
+          return true;
+        } catch (saveErr) {
+          addMonitorLog(`❌ บันทึกเข้าคลังล้มเหลว: ${saveErr.message}`, 'ERROR');
+          return false;
+        }
+      };
+
+      // Helper: ดึงวิดีโอจาก window.__FLOW_EXPORT_VIDEOS__ (และ fallback ถ้าจำเป็น) ในทุก iframe ของ Google Flow
+      const drainAndSaveFlowVideosToVault = async ({ allowFallback = false } = {}) => {
+        if (isDraining) return 0;
+        isDraining = true;
+        let newlySaved = 0;
+        try {
+          for (const tab of flowTabs) {
+            try {
+              const drainResults = await chrome.scripting.executeScript({
+                target: { tabId: tab.id, allFrames: true },
+                world: 'MAIN',
+                func: async (useFallback) => {
+                  const out = [];
+                  // 1) ดึงวิดีโอตัวเต็มที่รวมฉากเสร็จแล้วจาก __FLOW_EXPORT_VIDEOS__
+                  if (Array.isArray(window.__FLOW_EXPORT_VIDEOS__) && window.__FLOW_EXPORT_VIDEOS__.length > 0) {
+                    const drained = window.__FLOW_EXPORT_VIDEOS__.splice(0, window.__FLOW_EXPORT_VIDEOS__.length);
+                    out.push(...drained);
+                  }
+                  // 2) ถ้าสั่งใช้ Fallback (กรณีหลายฉากแล้ว FFmpeg รวมไฟล์ไม่สำเร็จ) ให้ดึงจาก __FLOW_SCENE_FALLBACK_VIDEOS__
+                  if (useFallback && out.length === 0 && Array.isArray(window.__FLOW_SCENE_FALLBACK_VIDEOS__) && window.__FLOW_SCENE_FALLBACK_VIDEOS__.length > 0) {
+                    const fbDrained = window.__FLOW_SCENE_FALLBACK_VIDEOS__.splice(0, window.__FLOW_SCENE_FALLBACK_VIDEOS__.length);
+                    out.push(...fbDrained);
+                  }
+                  // 3) ถ้ายังว่างและสั่งใช้ Fallback ให้ลองดึงจาก <video src="blob:..."> ในหน้า Tool
+                  if (useFallback && out.length === 0 && location.href.includes('scf.usercontent.goog')) {
+                    const videos = Array.from(document.querySelectorAll('video'));
+                    for (const v of videos) {
+                      const src = v.currentSrc || v.src || '';
+                      if (src.startsWith('blob:')) {
+                        try {
+                          const resp = await fetch(src);
+                          const blob = await resp.blob();
+                          if (blob.size > 45000 && blob.type.startsWith('video/')) {
+                            const b64 = await new Promise((res) => {
+                              const r = new FileReader();
+                              r.__phimbotInternal = true;
+                              r.onload = () => res(r.result);
+                              r.onerror = () => res('');
+                              r.readAsDataURL(blob);
+                            });
+                            if (b64) {
+                              const meta = typeof window.__phimbotResolveProductMeta === 'function'
+                                ? window.__phimbotResolveProductMeta()
+                                : { pName: 'สินค้าจาก AI SALER PRO', pId: '', pUrl: '', platform: 'tiktok' };
+                              out.push({
+                                productId: meta.pId,
+                                productName: meta.pName,
+                                productUrl: meta.pUrl,
+                                headline: meta.pName + ' รีวิวของดีบอกต่อ',
+                                videoBase64: b64,
+                                caption: meta.pName + ' รีวิวของดีบอกต่อ',
+                                platform: meta.platform,
+                                source: 'dom_video_fallback'
+                              });
+                            }
+                          }
+                        } catch (_) {}
+                      }
+                    }
+                  }
+                  return out;
+                },
+                args: [allowFallback]
+              });
+
+              for (const res of (drainResults || [])) {
+                if (!Array.isArray(res?.result) || res.result.length === 0) continue;
+                for (const vid of res.result) {
+                  const ok = await saveCapturedVideoToVault(vid, videosReceived);
+                  if (ok) newlySaved++;
+                }
+              }
+            } catch (tabErr) {
+              console.warn('[AutoPilot v3] Drain warn for tab', tab.id, tabErr);
+            }
+          }
+        } finally {
+          isDraining = false;
+        }
+        return newlySaved;
+      };
+
+      await new Promise((resolve, reject) => {
+        const pollTimer = setInterval(async () => {
+          if (isFactoryAborted) {
+            clearInterval(pollTimer);
+            resolve();
+            return;
+          }
+          pollCount++;
+
+          try {
+            // 3A. ตรวจสอบสถานะ Tool + ตรวจว่าหน้า ProductionMonitor ยังเปิดทำงานอยู่หรือไม่
+            let currentState = 'idle';
+            let hasMonitorOverlay = false;
+            let pendingExportInFrame = 0;
+            let pendingFallbackInFrame = 0;
+
+            for (const tab of flowTabs) {
+              try {
+                const statusResults = await chrome.scripting.executeScript({
+                  target: { tabId: tab.id, allFrames: true },
+                  world: 'MAIN',
+                  func: () => {
+                    const stateEl = document.querySelector('[data-state]');
+                    const dataState = stateEl ? stateEl.getAttribute('data-state') : null;
+                    const bodyText = document.body?.innerText || '';
+                    const monitorActive = Boolean(
+                      bodyText.includes('หน้าจอแสดงผลสดจากระบบ') ||
+                      bodyText.includes('AI_PROD_OS') ||
+                      Array.from(document.querySelectorAll('button')).some(b => (b.innerText || '').includes('หยุดผลิต'))
+                    );
+                    const exportLen = Array.isArray(window.__FLOW_EXPORT_VIDEOS__) ? window.__FLOW_EXPORT_VIDEOS__.length : 0;
+                    const fallbackLen = Array.isArray(window.__FLOW_SCENE_FALLBACK_VIDEOS__) ? window.__FLOW_SCENE_FALLBACK_VIDEOS__.length : 0;
+                    return { dataState, monitorActive, exportLen, fallbackLen };
+                  }
+                });
+                for (const sr of (statusResults || [])) {
+                  const d = sr?.result;
+                  if (!d) continue;
+                  if (d.dataState && d.dataState !== 'idle') currentState = d.dataState;
+                  else if (d.dataState === 'idle' && currentState === 'idle') currentState = 'idle';
+                  if (d.monitorActive) hasMonitorOverlay = true;
+                  pendingExportInFrame += (d.exportLen || 0);
+                  pendingFallbackInFrame += (d.fallbackLen || 0);
+                }
+              } catch (_) {}
+            }
+
+            if (hasMonitorOverlay && currentState === 'idle') {
+              currentState = 'generating_video';
+            }
+
+            if (currentState === 'brainstorming' || currentState === 'generating_video' || hasMonitorOverlay) {
+              wasGenerating = true;
+              activeGenerationTicks++;
+            }
+
+            if (currentState !== lastState) {
+              lastState = currentState;
+              const label = STATE_LABELS[currentState] || currentState;
+              addMonitorLog(`📊 สถานะ Tool: ${label}`);
+
+              if (currentState === 'brainstorming') {
+                btn.innerHTML = '💡 Tool กำลังคิดไอเดีย...';
+              } else if (currentState === 'generating_video') {
+                btn.innerHTML = '🎬 Tool กำลังสร้างวิดีโอ...';
+              }
+            }
+
+            // 3B. ดึงวิดีโอที่ผลิตเสร็จแล้วจาก Tool เข้าคลังวีดีโอทันทีในทุกๆ รอบ Poll (5 วินาที)
+            await drainAndSaveFlowVideosToVault({ allowFallback: false });
+
+            // 3C. ตรวจสอบเงื่อนไขจบการทำงานของ Tool:
+            // - ได้รับวิดีโอครบตามจำนวนที่ตั้งไว้ (videosReceived >= expectedVideos)
+            // - หรือ Tool ส่งสถานะ 'done'
+            // - หรือ Tool เคยเข้าสู่โหมดผลิตแล้ว (wasGenerating) และตอนนี้กลับมาหน้าหลัก (currentState === 'idle' && !hasMonitorOverlay)
+            const finishedAfterGenerating = wasGenerating && currentState === 'idle' && !hasMonitorOverlay && activeGenerationTicks >= 2;
+
+            if (videosReceived >= expectedVideos || currentState === 'done' || finishedAfterGenerating) {
+              clearInterval(pollTimer);
+
+              addMonitorLog('⏳ Tool ผลิตเสร็จแล้ว — รอ 4 วินาทีเพื่อเก็บตกไฟล์วิดีโอล่าสุดเข้าคลัง...');
+              await new Promise(r => setTimeout(r, 4000));
+
+              // ดึงวิดีโอรอบสุดท้าย (หากยังได้ 0 คลิปเพราะ FFmpeg รวมฉากล้มเหลว ให้เปิดใช้ Scene Fallback อัตโนมัติทันที!)
+              await drainAndSaveFlowVideosToVault({ allowFallback: videosReceived === 0 });
+
+              try { await refreshVault(); } catch (_) {}
+
+              addMonitorLog(`🎉 บันทึกวิดีโอเข้าคลังเสร็จสมบูรณ์! ได้รับวิดีโอทั้งหมด ${videosReceived} คลิป`);
+              const bar = $('#monProgressBar');
+              if (bar) bar.style.width = '100%';
+              resolve();
+              return;
+            }
+
+            // 3D. Progress log ทุก 1 นาที
+            if (pollCount % 12 === 0) {
+              const elapsed = Math.round(pollCount * 5 / 60);
+              addMonitorLog(`⏳ ผ่านไป ${elapsed} นาที — กำลังรอ Tool ผลิตวิดีโอ... (สถานะ: ${STATE_LABELS[lastState] || lastState || 'กำลังทำงาน'}, เข้าคลังแล้ว ${videosReceived}/${expectedVideos} คลิป)`);
+            }
+
+            // 3E. Timeout (30 นาที)
+            if (pollCount >= maxPollCount) {
+              clearInterval(pollTimer);
+              await drainAndSaveFlowVideosToVault({ allowFallback: videosReceived === 0 });
+              if (videosReceived > 0) {
+                addMonitorLog(`⌛ หมดเวลารอ แต่ได้รับวิดีโอ ${videosReceived} คลิปในคลัง — ดำเนินการสเต็ป 4 ต่อทันที`);
+                resolve();
+              } else {
+                reject(new Error('หมดเวลารอ Tool ผลิตวิดีโอ (30 นาที) — กรุณาตรวจสอบ Google Flow'));
+              }
+              return;
+            }
+          } catch (pollErr) {
+            console.warn('[AutoPilot v3] Poll error:', pollErr);
+          }
+        }, 5000); // ทุก 5 วินาที
+      });
+
+      // ═══════════ สเต็ป 4: Auto-Post / ติดตะกร้าตามที่เลือกไว้ใน Dropdown ═══════════
+      const liveTargetAfterFlow = $('#factoryPostTargetSelect')?.value || factoryPostTarget || 'vault_only';
+      factoryPostTarget = liveTargetAfterFlow;
+
+      if (videosReceived > 0) {
+        addMonitorLog(`📤 สเต็ป 4: ดำเนินการต่อตามเป้าหมายที่เลือกไว้ (${liveTargetAfterFlow})...`, 'POST');
+        btn.innerHTML = '📤 สเต็ป 4: กำลังดำเนินการตามเป้าหมาย...';
+        showToast(`📤 สเต็ป 4/4: ${liveTargetAfterFlow === 'vault_only' ? 'เก็บในคลังวีดีโอ' : 'กำลังส่งต่อและติดตะกร้าอัตโนมัติ'}...`);
+        const postResult = await executeAutoPostTarget(liveTargetAfterFlow, flowBatchStartTime);
+        const parts = [`เข้าคลัง ${videosReceived} คลิป`];
+        if (postResult?.tiktok > 0) parts.push(`TikTok ${postResult.tiktok}`);
+        if (postResult?.shopee > 0) parts.push(`Shopee ${postResult.shopee}`);
+        if (postResult?.reels > 0) parts.push(`Reels ${postResult.reels}`);
+        if (postResult?.cloudSync > 0) parts.push(`ส่งมือถือ ${postResult.cloudSync}`);
+        if (postResult?.vaultOnly) parts.push('เก็บในคลังเรียบร้อย');
+        addMonitorLog(`🏁 จบ Auto-Pilot (Google Flow): ${parts.join(' | ')}`, 'SUCCESS');
+        showToast(`🎉 สำเร็จ! ${parts.join(' | ')}`, 6000);
+        const monBar = $('#monProgressBar');
+        if (monBar) monBar.style.width = '100%';
+        setMonitorCompletedState(videosReceived);
+      } else {
+        addMonitorLog('ℹ️ ไม่มีวิดีโอใหม่สำหรับดำเนินการต่อ');
+        showToast('ℹ️ ไม่มีวิดีโอใหม่', 4000);
+        if (isFactoryAborted) {
+          setMonitorAbortedState();
+        } else {
+          setMonitorCompletedState(0);
+        }
+      }
+
+    } catch (err) {
+      console.error('[OneClickAutoPilot v3] Error:', err);
+      addMonitorLog(`❌ เกิดข้อผิดพลาด: ${err.message}`);
+      showToast(`❌ ${err.message}`);
+      if (isFactoryAborted) setMonitorAbortedState();
+    } finally {
+      isFactoryBusy = false;
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     FACTORY — Start Production (Manual button)
+     ═══════════════════════════════════════════════════════════════════════ */
+  $('#btnStartFactory')?.addEventListener('click', async () => {
+    const selectedIdeas = factoryIdeas.filter(i => i._selected);
+    if (selectedIdeas.length === 0) {
+      showToast('กรุณาเลือกอย่างน้อย 1 ไอเดียจาก Idea Bank');
+      return;
+    }
+    if (factoryProducts.length === 0) {
+      showToast('กรุณาเพิ่มสินค้าก่อนเริ่มผลิต');
+      return;
+    }
+
+    // Check if scripts are generated for selected ideas
+    const selectedScripts = {};
+    let hasMissing = false;
+    selectedIdeas.forEach((idea, idx) => {
+      const realIdx = factoryIdeas.indexOf(idea);
+      if (!factoryScripts[realIdx]) {
+        hasMissing = true;
+      } else {
+        selectedScripts[idx] = factoryScripts[realIdx];
+      }
+    });
+
+    if (hasMissing) {
+      showToast('กรุณากด "ดูบท" เพื่อสร้างบทให้ครบก่อน');
+      return;
+    }
+
+    // Show monitor
+    const monitor = $('#factoryMonitor');
+    if (monitor) monitor.classList.remove('hidden');
+    const logEl = $('#monLog');
+    if (logEl) logEl.innerHTML = '';
+    setMonitorRunningState();
+
+    const btn = $('#btnStartFactory');
+    btn.disabled = true;
+    btn.innerHTML = '⏳ กำลังผลิต...';
+
+    // Log the production plan
+    addMonitorLog(`📋 แผนผลิต: ${factoryProducts.length} สินค้า × ${selectedIdeas.length} ไอเดีย`);
+    factoryProducts.forEach((p, i) => addMonitorLog(`   สินค้า ${i + 1}: ${p.name}`));
+    selectedIdeas.forEach((idea, i) => addMonitorLog(`   ไอเดีย ${i + 1}: ${idea.headline}`));
+
+    // Listen for progress from background
+    const progressHandler = (msg) => {
+      if (msg?.type === 'PHIMBOT_FACTORY_STATUS') {
+        const p = msg.payload;
+        addMonitorLog(p.message || p.step || '');
+        
+        // Update progress counters
+        if (p.productIdx !== undefined) {
+          const mp = $('#monProduct');
+          const mi = $('#monIdea');
+          if (mp) mp.textContent = `${p.productIdx + 1}/${p.productTotal || factoryProducts.length}`;
+          if (mi) mi.textContent = `${p.ideaIdx + 1}/${p.ideaTotal || selectedIdeas.length}`;
+        }
+        if (p.sceneIdx !== undefined) {
+          const ms = $('#monScene');
+          if (ms) ms.textContent = `${p.sceneIdx + 1}/${$('#factorySceneCount')?.value || 3}`;
+        }
+
+        // Update progress bar
+        if (p.productTotal && p.ideaTotal) {
+          const total = p.productTotal * p.ideaTotal;
+          const current = p.productIdx * p.ideaTotal + (p.ideaIdx || 0);
+          const pct = Math.round((current / total) * 100);
+          const bar = $('#monProgressBar');
+          if (bar) bar.style.width = `${pct}%`;
+        }
+
+        // Done
+        if (p.status === 'done') {
+          addMonitorLog('🎉 ผลิตเสร็จสมบูรณ์! ไปดูวีดีโอในแท็บ "คลัง"');
+          const bar = $('#monProgressBar');
+          if (bar) bar.style.width = '100%';
+          btn.disabled = false;
+          btn.innerHTML = '🚀 ขั้นตอน 2: เดินเครื่องผลิต + โพสต์';
+          setMonitorCompletedState(p.count || 0);
+          chrome.runtime.onMessage.removeListener(progressHandler);
+
+          // Auto-sync to mobile Shopee if enabled
+          const autoSync = $('#factoryAutoSyncShopee')?.checked;
+          if (autoSync && window.ASUClipSync) {
+            (async () => {
+              try {
+                const s = await window.ASUClipSync.getClipSyncSettings();
+                if (s.enabled && s.pairCode) {
+                  addMonitorLog('☁️ กำลังส่งคลิปที่ผลิตเสร็จเข้ามือถืออัตโนมัติ...');
+                  const vaultRes = await sendMsg('PHIMBOT_VAULT_GET');
+                  const vaultList = vaultRes.vault || [];
+                  const unpostedShopee = vaultList.filter(v => !v.posted?.shopee && v.videoBase64);
+                  let sentCount = 0;
+                  for (const vid of unpostedShopee.slice(0, 5)) {
+                    let pUrl = vid.productUrl || '';
+                    if (!pUrl) {
+                      const pFound = factoryProducts.find(prod => (prod.productId || prod.id) === vid.productId);
+                      if (pFound) pUrl = window.ASUClipSync.resolveClipSyncProductUrl(pFound);
+                    }
+                    const res = await window.ASUClipSync.pushClipToRelay(vid.videoBase64, {
+                      sourceMode: 'factory_auto',
+                      productTitle: vid.productName || vid.headline || '',
+                      productUrl: pUrl,
+                      caption: vid.headline || vid.productName || '',
+                      hashtags: '#ShopeeTH #ShopeeVideo #รีวิว #ของดีบอกต่อ'
+                    });
+                    if (res && res.success) {
+                      await sendMsg('PHIMBOT_VAULT_MARK_POSTED', { id: vid.id, platform: 'shopee' });
+                      sentCount++;
+                    }
+                  }
+                  if (sentCount > 0) {
+                    addMonitorLog(`📲 ส่งคลิปเข้ามือถือ Shopee แล้ว ${sentCount} คลิป!`);
+                    showToast(`📲 ส่งเข้ามือถือเรียบร้อย ${sentCount} คลิป`);
+                  }
+                }
+              } catch (e) {
+                console.warn('[VideoFactory] Auto sync mobile error:', e);
+              }
+            })();
+          }
+        }
+        if (p.status === 'error' && !p.message?.includes('ฉาก')) {
+          btn.disabled = false;
+          btn.innerHTML = '🚀 ขั้นตอน 2: เดินเครื่องผลิต + โพสต์';
+          chrome.runtime.onMessage.removeListener(progressHandler);
+        }
+      }
+    };
+    chrome.runtime.onMessage.addListener(progressHandler);
+
+    // Send to background to start the factory
+    addMonitorLog('🚀 กำลังเปิด Google Flow...');
+    const res = await sendMsg('PHIMBOT_START_VIDEO_FACTORY', {
+      products: factoryProducts,
+      ideas: selectedIdeas.map(i => ({ headline: i.headline, concept: i.concept })),
+      scripts: selectedScripts,
+      charImages: factoryCharImages,  // รูปตัวละคร Reference (base64)
+      imageModel: $('#factoryImageModel')?.value || '🍌 Nano Banana Pro',
+      videoModel: $('#factoryVideoModel')?.value || 'Veo 3.1 - Lite [Lower Priority]',
+      duration: parseInt($('#factoryDuration')?.value || '8'),
+      mode: factoryMode
+    });
+
+    if (!res.success) {
+      addMonitorLog(`❌ เกิดข้อผิดพลาด: ${res.error}`);
+      btn.disabled = false;
+      btn.innerHTML = '🚀 ขั้นตอน 2: เดินเครื่องผลิต + โพสต์';
+      chrome.runtime.onMessage.removeListener(progressHandler);
+    }
+  });
+
+  const monitorLogHistory = [];
+
+  function addMonitorLog(text, level = 'INFO') {
+    const time = new Date().toLocaleTimeString('th');
+    const entry = { time, text, level };
+    monitorLogHistory.push(entry);
+    console.log(`[Factory ${level}] ${text}`);
+
+    const log = $('#monLog');
+    if (!log) return;
+
+    const LEVEL_COLORS = {
+      INFO: '#94a3b8',   // slate
+      POST: '#38bdf8',   // sky blue
+      ERROR: '#f87171',  // red
+      SUCCESS: '#4ade80', // green
+    };
+
+    const line = document.createElement('div');
+    line.style.cssText = `margin-bottom:3px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04);color:${LEVEL_COLORS[level] || LEVEL_COLORS.INFO};`;
+    const levelBadge = level !== 'INFO' ? `[${level}] ` : '';
+    line.textContent = `[${time}] ${levelBadge}${text}`;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     PRODUCTION MONITOR LIFECYCLE CONTROLS
+     ═══════════════════════════════════════════════════════════════════════ */
+  function setMonitorRunningState() {
+    const act = $('#factoryMonitorActions');
+    if (!act) return;
+    act.innerHTML = `<button id="btnAbortFactory" class="btn btn-outline" type="button" style="width:100%;color:#ef4444;border-color:#ef4444;font-size:12px;font-weight:600;padding:8px;border-radius:20px;cursor:pointer;">⛔ หยุดการผลิต</button>`;
+    $('#btnAbortFactory')?.addEventListener('click', handleAbortFactory);
+  }
+
+  function setMonitorCompletedState(clipCount = 0) {
+    const act = $('#factoryMonitorActions');
+    if (!act) return;
+    const countText = clipCount > 0 ? ` (${clipCount} คลิป)` : '';
+    act.innerHTML = `
+      <div style="display:flex;gap:8px;margin-top:2px;">
+        <button id="btnGoToVault" class="btn btn-primary" type="button" style="flex:2;font-size:12px;font-weight:700;padding:8px 10px;background:#10b981;border:none;border-radius:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 2px 8px rgba(16,185,129,0.3);color:#ffffff;">
+          🎉 ดูคลิปในคลัง${countText}
+        </button>
+        <button id="btnCloseMonitor" class="btn btn-outline" type="button" style="flex:1;font-size:12px;font-weight:600;padding:8px;border-radius:20px;cursor:pointer;">
+          ✖️ ปิด Monitor
+        </button>
+      </div>
+    `;
+    $('#btnGoToVault')?.addEventListener('click', () => {
+      document.querySelector('.tab-btn[data-tab="vault"]')?.click();
+      refreshVault();
+    });
+    $('#btnCloseMonitor')?.addEventListener('click', () => {
+      const monitor = $('#factoryMonitor');
+      if (monitor) monitor.classList.add('hidden');
+    });
+  }
+
+  function setMonitorAbortedState() {
+    const act = $('#factoryMonitorActions');
+    if (!act) return;
+    act.innerHTML = `
+      <button id="btnCloseMonitor" class="btn btn-outline" type="button" style="width:100%;font-size:12px;padding:8px;border-radius:20px;cursor:pointer;color:var(--text-dim);border-color:var(--border);">
+        🛑 การผลิตถูกหยุดแล้ว — ปิดหน้าจอนี้
+      </button>
+    `;
+    $('#btnCloseMonitor')?.addEventListener('click', () => {
+      const monitor = $('#factoryMonitor');
+      if (monitor) monitor.classList.add('hidden');
+    });
+  }
+
+  async function handleAbortFactory() {
+    isFactoryAborted = true;
+    isFactoryBusy = false;
+    await sendMsg('PHIMBOT_ABORT_VIDEO_FACTORY');
+    setMonitorAbortedState();
+    showToast('หยุดการผลิตแล้ว');
+  }
+
+  // Initial binding
+  $('#btnAbortFactory')?.addEventListener('click', handleAbortFactory);
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     MEDIA VAULT
+     ═══════════════════════════════════════════════════════════════════════ */
+  let vaultFilter = 'all';
+  let selectedVaultIds = new Set();
+  let currentVaultList = [];
+
+  async function refreshVault() {
+    // อ่านเฉพาะ metadata จาก chrome.storage.local (ไม่โหลด video base64 ทั้งหมด → เร็วกว่า 100x)
+    const storeData = await chrome.storage.local.get(['phimbot_media_vault', 'phimbot_products']);
+    const vault = storeData.phimbot_media_vault || [];
+    const catalogProds = Array.isArray(storeData.phimbot_products) ? storeData.phimbot_products : [];
+
+    // ═══ Auto-Migrate Inline Videos & Missing ProductIds (Self-Healing Vault) ═══
+    let vaultMutated = false;
+    const extraStorageWrites = {};
+    for (const item of vault) {
+      // 1. ย้าย videoBase64 ที่ฝังอยู่ใน array ออกไปเก็บใน videoStorageKey แยกต่างหาก (ลดขนาด vault จาก 120MB เหลือ ~5MB)
+      if (item.videoBase64 && item.videoBase64.length > 50000) {
+        const vKey = item.videoStorageKey && item.videoStorageKey !== 'storage_failed'
+          ? item.videoStorageKey
+          : `phimbot_video_${item.id}`;
+        extraStorageWrites[vKey] = item.videoBase64;
+        item.videoStorageKey = vKey;
+        item.videoBase64Size = item.videoBase64.length;
+        item.videoBase64 = '';
+        vaultMutated = true;
+      }
+      // 2. ซ่อมรหัสสินค้า (productId) ที่ว่างหรือติด PID_UNKNOWN โดยจับคู่ชื่อสินค้าจากคลังสินค้าอัตโนมัติ
+      const cleaned = cleanProductId(item.productId);
+      if (cleaned !== (item.productId || '')) {
+        item.productId = cleaned;
+        vaultMutated = true;
+      }
+      if (!item.productId && item.productName && catalogProds.length > 0) {
+        const matched = catalogProds.find(p => {
+          const pName = String(p.name || p.title || '').trim();
+          return pName && (pName === item.productName.trim() || pName.includes(item.productName.trim()) || item.productName.trim().includes(pName));
+        });
+        if (matched) {
+          const mPid = cleanProductId(matched.productId || matched.tiktokProductId || matched.id);
+          if (mPid) {
+            item.productId = mPid;
+            vaultMutated = true;
+          }
+        }
+      }
+    }
+    if (vaultMutated) {
+      try {
+        for (const [vKey, vData] of Object.entries(extraStorageWrites)) {
+          try {
+            await chrome.storage.local.set({ [vKey]: vData });
+          } catch (singleErr) {
+            console.warn('[Vault] Failed to extract single video key:', vKey, singleErr);
+          }
+        }
+        await chrome.storage.local.set({ phimbot_media_vault: vault });
+        console.log('[Vault] Self-healed vault items (extracted inline videos & linked missing productIds)');
+      } catch (e) {
+        console.warn('[Vault] Self-heal save warning:', e);
+      }
+    }
+
+    currentVaultList = vault;
+
+    renderVault(vault);
+
+    // ═══ Backfill thumbnails สำหรับคลิปเก่าที่ไม่มี thumbnail ═══
+    const needThumb = vault.filter(v => !v.thumbnail && v.videoStorageKey && v.videoStorageKey !== 'storage_failed');
+    if (needThumb.length > 0) {
+      backfillThumbnails(needThumb, vault);
+    }
+  }
+
+  /** โหลด video base64 ของ item เดียว (on-demand) */
+  async function loadVideoBase64(item) {
+    if (item.videoBase64) return item.videoBase64;
+    if (!item.videoStorageKey || item.videoStorageKey === 'storage_failed') return '';
+    const data = await chrome.storage.local.get([item.videoStorageKey]);
+    const b64 = data[item.videoStorageKey] || '';
+    item.videoBase64 = b64;
+    return b64;
+  }
+
+  /** สร้าง thumbnail ย้อนหลังสำหรับคลิปเก่า (background, ไม่บล็อก UI) */
+  async function backfillThumbnails(items, vault) {
+    let updated = 0;
+    for (const item of items) {
+      try {
+        const b64 = await loadVideoBase64(item);
+        if (!b64) continue;
+        const thumb = await generateThumbnailFromBase64(b64);
+        if (!thumb) continue;
+        item.thumbnail = thumb;
+        item.videoBase64 = ''; // ปล่อย RAM
+        updated++;
+        // Update DOM ทันที
+        const imgEl = document.querySelector(`[data-thumb-id="${item.id}"]`);
+        if (imgEl) { imgEl.src = thumb; imgEl.style.display = 'block'; }
+        const emojiEl = document.querySelector(`[data-emoji-id="${item.id}"]`);
+        if (emojiEl) emojiEl.style.display = 'none';
+      } catch (_) {}
+    }
+    if (updated > 0) {
+      // Save thumbnail กลับเข้า vault metadata
+      const store = await chrome.storage.local.get(['phimbot_media_vault']);
+      const vaultNow = store.phimbot_media_vault || [];
+      for (const item of items) {
+        if (!item.thumbnail) continue;
+        const found = vaultNow.find(v => v.id === item.id);
+        if (found) found.thumbnail = item.thumbnail;
+      }
+      await chrome.storage.local.set({ phimbot_media_vault: vaultNow });
+      console.log(`[Vault] Backfilled ${updated} thumbnails`);
+    }
+  }
+
+  /** สร้าง thumbnail จาก video base64 dataURL */
+  function generateThumbnailFromBase64(videoBase64) {
+    return new Promise((resolve) => {
+      const v = document.createElement('video');
+      v.muted = true;
+      v.preload = 'auto';
+      const timeoutId = setTimeout(() => { v.remove(); resolve(''); }, 10000);
+      v.addEventListener('loadeddata', () => {
+        v.currentTime = Math.min(0.5, v.duration * 0.1 || 0.5);
+      }, { once: true });
+      v.addEventListener('seeked', () => {
+        clearTimeout(timeoutId);
+        try {
+          const canvas = document.createElement('canvas');
+          const scale = 120 / Math.max(v.videoWidth, v.videoHeight, 1);
+          canvas.width = Math.round(v.videoWidth * scale);
+          canvas.height = Math.round(v.videoHeight * scale);
+          canvas.getContext('2d').drawImage(v, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
+        } catch(_) { resolve(''); }
+        v.remove();
+      }, { once: true });
+      v.addEventListener('error', () => { clearTimeout(timeoutId); v.remove(); resolve(''); }, { once: true });
+      v.src = videoBase64;
+    });
+  }
+
+  function renderVault(vault) {
+    const grid = $('#vaultGrid');
+    const empty = $('#vaultEmpty');
+    const countEl = $('#vaultCount');
+    if (!grid) return;
+
+    // Apply filter
+    let filtered = vault;
+    if (vaultFilter === 'tiktok') filtered = vault.filter(v => v.platform === 'tiktok' || (!v.platform && !v.productUrl?.includes('shopee')));
+    if (vaultFilter === 'shopee') filtered = vault.filter(v => v.platform === 'shopee' || v.productUrl?.includes('shopee'));
+    if (vaultFilter === 'unposted') filtered = vault.filter(v => !v.posted?.tiktok && !v.posted?.reels && !v.posted?.shopee);
+    if (vaultFilter === 'posted') filtered = vault.filter(v => v.posted?.tiktok || v.posted?.reels || v.posted?.shopee);
+
+    if (countEl) countEl.textContent = `${vault.length} รายการ`;
+
+    if (filtered.length === 0) {
+      grid.innerHTML = '';
+      if (empty) empty.classList.remove('hidden');
+      updateVaultBatchBarUI(filtered);
+      return;
+    }
+    if (empty) empty.classList.add('hidden');
+
+    grid.innerHTML = '';
+    filtered.forEach(item => {
+      const card = document.createElement('div');
+      const isSelected = selectedVaultIds.has(item.id);
+      card.className = 'vault-card' + (isSelected ? ' selected' : '');
+      card.dataset.id = item.id;
+      card.style.cssText = 'background:var(--bg-card);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:all 0.2s;';
+
+      const isShopee = item.platform === 'shopee' || (item.productUrl && item.productUrl.includes('shopee'));
+      const platformBadge = isShopee
+        ? `<span style="background:rgba(238,77,45,0.15);color:#ee4d2d;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;border:1px solid rgba(238,77,45,0.3);display:inline-flex;align-items:center;gap:3px;">🛍️ Shopee Video</span>`
+        : `<span style="background:rgba(34,197,94,0.15);color:#22c55e;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;border:1px solid rgba(34,197,94,0.3);display:inline-flex;align-items:center;gap:3px;">🎵 TikTok Shop</span>`;
+
+      const productMeta = isShopee
+        ? (item.productUrl ? `<div style="font-size:9px;color:#ee4d2d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;" title="${item.productUrl}">🔗 Shopee Link: ${item.productUrl}</div>` : '')
+        : (item.productId ? `<div style="font-size:9px;color:#22c55e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;">🏷️ PID: ${item.productId}</div>` : '');
+
+      const posted = [];
+      if (item.posted?.tiktok) posted.push('✅ TikTok');
+      if (item.posted?.reels) posted.push('✅ Reels');
+      if (item.posted?.shopee) posted.push('✅ Shopee');
+      const postedText = posted.length > 0 ? posted.join(' | ') : '🔴 ยังไม่โพสต์';
+
+      // Highlight primary button depending on platform
+      const shopeeBtnHtml = isShopee
+        ? `<button class="vault-action btn" data-action="shopee" data-id="${item.id}" style="flex:1.4;font-size:10px;padding:5px 4px;min-width:0;background:#ee4d2d;color:#fff;border:none;font-weight:700;box-shadow:0 1px 3px rgba(238,77,45,0.4);" ${item.posted?.shopee ? 'disabled style="opacity:0.4;flex:1;font-size:10px;padding:4px;"' : ''}>📲 โพสต์ Shopee (มือถือ)</button>`
+        : `<button class="vault-action btn btn-outline" data-action="shopee" data-id="${item.id}" style="flex:1;font-size:10px;padding:4px;min-width:0;" ${item.posted?.shopee ? 'disabled style="opacity:0.4;flex:1;font-size:10px;padding:4px;"' : ''}>📲 Shopee</button>`;
+
+      const tiktokBtnHtml = !isShopee
+        ? `<button class="vault-action btn" data-action="tiktok" data-id="${item.id}" style="flex:1.4;font-size:10px;padding:5px 4px;min-width:0;background:linear-gradient(135deg, #06b6d4, #3b82f6);color:#fff;border:none;font-weight:700;box-shadow:0 1px 3px rgba(6,182,212,0.4);" ${item.posted?.tiktok ? 'disabled style="opacity:0.4;flex:1;font-size:10px;padding:4px;"' : ''}>📤 โพสต์ TikTok (เข้าคิว)</button>`
+        : `<button class="vault-action btn btn-outline" data-action="tiktok" data-id="${item.id}" style="flex:1;font-size:10px;padding:4px;min-width:0;" ${item.posted?.tiktok ? 'disabled style="opacity:0.4;flex:1;font-size:10px;padding:4px;"' : ''}>📤 TikTok</button>`;
+
+      const thumbSrc = item.thumbnail || item.productImage || '';
+      const hasThumb = Boolean(thumbSrc);
+
+      card.innerHTML = `
+        <div style="display:flex;gap:10px;padding:10px;">
+          <div style="display:flex;align-items:center;justify-content:center;padding:0 2px;">
+            <input type="checkbox" class="vault-item-chk" data-id="${item.id}" ${isSelected ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
+          </div>
+          <div class="vault-preview-btn" data-id="${item.id}" style="width:60px;height:106px;border-radius:8px;background:var(--bg-deep);overflow:hidden;flex-shrink:0;cursor:pointer;position:relative;" title="คลิกเพื่อดูตัวอย่างวีดีโอ">
+            <img data-thumb-id="${item.id}" src="${hasThumb ? thumbSrc : ''}" style="width:100%;height:100%;object-fit:cover;${hasThumb ? '' : 'display:none;'}">
+            <div data-emoji-id="${item.id}" style="width:100%;height:100%;display:${hasThumb ? 'none' : 'flex'};align-items:center;justify-content:center;font-size:24px;position:absolute;top:0;left:0;">🎬</div>
+            <div style="position:absolute;bottom:3px;right:3px;background:rgba(0,0,0,0.6);border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:10px;">▶</div>
+          </div>
+          <div style="flex:1;overflow:hidden;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+              ${platformBadge}
+              <span style="font-size:9px;color:var(--text-dim);">${item.beat || 'คลิป AI'}</span>
+            </div>
+            <div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.headline || item.productName || 'วีดีโอ AI'}</div>
+            <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">${item.productName || ''}</div>
+            ${productMeta}
+            <div style="font-size:10px;margin-top:4px;">${postedText}</div>
+            <div style="font-size:9px;color:var(--text-dim);margin-top:2px;">${new Date(item.createdAt).toLocaleString('th')}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:4px;padding:0 10px 10px;flex-wrap:wrap;">
+          ${tiktokBtnHtml}
+          <button class="vault-action btn btn-outline" data-action="reels" data-id="${item.id}" style="flex:0.8;font-size:10px;padding:4px;min-width:0;" ${item.posted?.reels ? 'disabled style="opacity:0.4;flex:0.8;font-size:10px;padding:4px;"' : ''}>📤 Reels</button>
+          ${shopeeBtnHtml}
+          <button class="vault-action btn btn-outline" data-action="download" data-id="${item.id}" style="font-size:10px;padding:4px 6px;min-width:0;" title="ดาวน์โหลดไฟล์ MP4">⬇️</button>
+          <button class="vault-action btn btn-outline" data-action="delete" data-id="${item.id}" style="font-size:10px;padding:4px 6px;color:#ef4444;border-color:#ef4444;min-width:0;" title="ลบออกจากคลัง">🗑️</button>
+        </div>
+      `;
+
+      // Checkbox listener
+      const chk = card.querySelector('.vault-item-chk');
+      chk?.addEventListener('change', (e) => {
+        e.stopPropagation();
+        if (chk.checked) {
+          selectedVaultIds.add(item.id);
+          card.classList.add('selected');
+        } else {
+          selectedVaultIds.delete(item.id);
+          card.classList.remove('selected');
+        }
+        updateVaultBatchBarUI(filtered);
+      });
+
+      grid.appendChild(card);
+    });
+
+    updateVaultBatchBarUI(filtered);
+
+    // ═══ Video Preview Popup (คลิก thumbnail เพื่อดูตัวอย่าง) ═══
+    grid.querySelectorAll('.vault-preview-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        const item = vault.find(v => v.id === id);
+        if (!item) return;
+
+        // สร้าง overlay
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+        overlay.innerHTML = `
+          <div style="color:#fff;font-size:12px;margin-bottom:8px;text-align:center;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.productName || 'วีดีโอ AI'}</div>
+          <div style="color:var(--text-dim);font-size:11px;margin-bottom:12px;">⏳ กำลังโหลดวีดีโอ...</div>
+          <div style="width:100%;max-width:280px;aspect-ratio:9/16;background:#000;border-radius:12px;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+            <div style="color:var(--text-dim);font-size:32px;" id="previewLoading">⏳</div>
+          </div>
+          <button style="margin-top:12px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:8px;padding:8px 24px;font-size:12px;cursor:pointer;">✕ ปิด</button>
+        `;
+        overlay.querySelector('button').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        document.body.appendChild(overlay);
+
+        // โหลด video on-demand
+        const videoB64 = await loadVideoBase64(item);
+        if (!videoB64) {
+          overlay.querySelector('#previewLoading').textContent = '❌ ไม่พบไฟล์';
+          return;
+        }
+
+        const container = overlay.querySelector('#previewLoading').parentElement;
+        container.innerHTML = `<video src="${videoB64}" style="width:100%;height:100%;object-fit:contain;" controls autoplay loop muted></video>`;
+        overlay.querySelectorAll('div')[1].textContent = `📦 ${(videoB64.length / 1024 / 1024).toFixed(1)} MB`;
+        // ปล่อย RAM หลังปิด
+        overlay.addEventListener('click', () => { item.videoBase64 = ''; }, { once: true });
+      });
+    });
+
+    // Vault action events
+    grid.querySelectorAll('.vault-action').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const action = btn.dataset.action;
+        const id = btn.dataset.id;
+        const item = vault.find(v => v.id === id);
+        if (!item) return;
+
+        switch (action) {
+          case 'tiktok': {
+            // Add to existing TikTok post queue & auto-start
+            btn.disabled = true; btn.textContent = '⏳ โหลด...';
+            const videoData = await loadVideoBase64(item);
+            if (!videoData) { showToast('ไม่พบไฟล์วีดีโอ'); btn.disabled = false; btn.textContent = '📤 TikTok'; break; }
+            const catalogResolved = await resolveCatalogProduct(item, 0);
+            const pHashtags = (Array.isArray(item.hashtags) && item.hashtags.length) ? item.hashtags : resolveProductHashtags(item);
+            const prodTitle = (catalogResolved.productName || item.productName || item.headline || 'สินค้า').trim();
+            const shortName = prodTitle.length > 55 ? prodTitle.slice(0, 52) + '...' : prodTitle;
+            const singleCaption = `🔥 แนะนำเลยตัวนี้! ${shortName} ดีไซน์สวย ใช้งานดีมาก พิกัดในตะกร้าเลยจ้า ✨`;
+            const cleanCaption = cleanCaptionText(item.headline, prodTitle, item.caption);
+            const pImg = catalogResolved.productImage || item.productImage || resolveProductImage(item);
+            const vThumb = item.thumbnail || await generateVideoThumbnail(videoData);
+            const cleanPid = catalogResolved.productId;
+            const tiktokJob = {
+              id: `factory_${Date.now()}`,
+              videoDataUrl: videoData,
+              caption: cleanCaption || singleCaption,
+              hashtags: pHashtags,
+              thumbnail: vThumb,
+              productImage: pImg,
+              source: 'factory_vault',
+              productId: cleanPid,
+              publishMode: 'now',
+              scheduleMode: 'now',
+              needsAiCaption: true,
+              aiContext: {
+                productName: prodTitle,
+                productDesc: item.headline || '',
+                videoIndex: 0,
+                totalVideos: 1,
+              }
+            };
+            const qRes = await sendMsg('PHIMBOT_ADD_TO_QUEUE', tiktokJob);
+            if (qRes.success) {
+              await sendMsg('PHIMBOT_VAULT_MARK_POSTED', { id, platform: 'tiktok' });
+              await sendMsg('PHIMBOT_START_QUEUE');
+              refreshVault();
+              showToast('🚀 เพิ่มลงคิว TikTok และสั่งเดินคิวโพสต์ + ปักตะกร้าอัตโนมัติแล้ว!');
+            } else {
+              showToast(qRes.error || 'เพิ่มลงคิวไม่สำเร็จ');
+              btn.disabled = false; btn.textContent = '📤 โพสต์ TikTok (เข้าคิว)';
+            }
+            break;
+          }
+          case 'reels': {
+            // Send to FB Reels poster queue & auto-start
+            btn.disabled = true; btn.textContent = '⏳ โหลด...';
+            const reelsVideo = await loadVideoBase64(item);
+            if (reelsVideo) {
+              const catalogResolved = await resolveCatalogProduct(item, 0);
+              const prodTitle = (catalogResolved.productName || item.productName || item.headline || 'สินค้า').trim();
+              const cleanCaption = cleanCaptionText(item.headline, prodTitle, item.caption) || `🔥 ${prodTitle}`;
+              const pHashtags = (Array.isArray(item.hashtags) && item.hashtags.length) ? item.hashtags : resolveProductHashtags(item);
+              const reelsJob = {
+                id: `reels_${Date.now()}`,
+                platform: 'fb-reels',
+                videoDataUrl: reelsVideo,
+                caption: cleanCaption,
+                hashtags: pHashtags,
+                affiliateUrl: catalogResolved.productUrl || item.productUrl || '',
+                publishMode: 'now',
+                status: 'pending',
+                createdAt: new Date().toISOString(),
+              };
+              const qRes = await sendMsg('PHIMBOT_ADD_TO_QUEUE', reelsJob);
+              if (qRes && qRes.success) {
+                await sendMsg('PHIMBOT_VAULT_MARK_POSTED', { id, platform: 'reels' });
+                await sendMsg('PHIMBOT_START_QUEUE');
+                refreshVault();
+                showToast('🚀 เพิ่มลงคิว Facebook Reels และเริ่มโพสต์อัตโนมัติแล้ว!');
+              } else {
+                showToast(qRes?.error || 'เพิ่มลงคิว Reels ไม่สำเร็จ');
+                btn.disabled = false; btn.textContent = '📤 Reels';
+              }
+            } else {
+              showToast('ไม่พบไฟล์วีดีโอ');
+              btn.disabled = false; btn.textContent = '📤 Reels';
+            }
+            break;
+          }
+          case 'shopee': {
+            btn.disabled = true; btn.textContent = '⏳ โหลด...';
+            const shopeeVideo = await loadVideoBase64(item);
+            if (!shopeeVideo) {
+              showToast('ไม่พบไฟล์วีดีโอ');
+              btn.disabled = false; btn.textContent = '📲 Shopee';
+              break;
+            }
+
+            // หาลิงก์สินค้าสำหรับปักตะกร้า Shopee
+            let productUrl = item.productUrl || '';
+            if (!productUrl) {
+              const res = await sendMsg('PHIMBOT_GET_PRODUCTS');
+              const pFound = (res.products || []).find(p => (p.productId || p.id) === item.productId);
+              if (pFound) {
+                productUrl = pFound.affiliateUrl || pFound.offerUrl || pFound.url || '';
+              }
+            }
+
+            if (!productUrl) {
+              const entered = prompt('กรุณาใส่ลิงก์สินค้า Shopee สำหรับปักตะกร้า:', '');
+              if (entered && entered.trim()) {
+                productUrl = entered.trim();
+              }
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⏳ ส่ง...';
+            showToast('⏳ กำลังส่งคลิปเข้ามือถือ...');
+
+            // รับ progress จาก runShopeePost เพื่อแสดงสถานะ realtime
+            const progressHandler = (msg) => {
+              if (msg?.type === 'PHIMBOT_SHOPEE_VIDEO_PROGRESS' && msg.payload?.message) {
+                btn.textContent = '⏳ ' + msg.payload.message.slice(0, 30);
+                showToast(msg.payload.message, 5000);
+              }
+            };
+            chrome.runtime.onMessage.addListener(progressHandler);
+
+            try {
+              const pushRes = await sendMsg('PHIMBOT_POST_SHOPEE_VIDEO', {
+                videoDataUrl: shopeeVideo,
+                productUrl: productUrl,
+                productTitle: item.productName || item.headline || 'สินค้า Shopee',
+                caption: item.headline || item.productName || 'รีวิวสินค้าคุณภาพดี',
+                hashtags: '#ShopeeTH #ShopeeVideo #รีวิว #ของดีบอกต่อ',
+                product: { title: item.productName || '', affiliateUrl: productUrl }
+              });
+
+              if (pushRes && pushRes.ok) {
+                await sendMsg('PHIMBOT_VAULT_MARK_POSTED', { id, platform: 'shopee' });
+                refreshVault();
+                showToast('📲 ส่งคลิปขึ้น Cloud Sync เรียบร้อย! รอแอปมือถือโพสต์ Shopee');
+              } else {
+                btn.disabled = false;
+                btn.textContent = '📲 Shopee';
+                showToast('❌ ส่งไม่สำเร็จ: ' + ((pushRes && (pushRes.error || pushRes.reason)) || 'เครือข่ายขัดข้อง'));
+              }
+            } catch (err) {
+              btn.disabled = false;
+              btn.textContent = '📲 Shopee';
+              showToast('❌ ส่งไม่สำเร็จ: ' + (err.message || String(err)));
+            } finally {
+              chrome.runtime.onMessage.removeListener(progressHandler);
+            }
+            break;
+          }
+          case 'download': {
+            btn.disabled = true; btn.textContent = '⏳';
+            const dlVideo = await loadVideoBase64(item);
+            if (dlVideo) {
+              const a = document.createElement('a');
+              a.href = dlVideo;
+              a.download = `phimbot_${item.productName || 'video'}_${Date.now()}.mp4`;
+              a.click();
+              showToast('⬇️ ดาวน์โหลดสำเร็จ');
+              item.videoBase64 = ''; // ปล่อย RAM
+            } else {
+              showToast('ไม่พบไฟล์วีดีโอ');
+            }
+            btn.disabled = false; btn.textContent = '⬇️';
+            break;
+          }
+          case 'delete':
+            if (confirm('ลบวีดีโอนี้ออกจากคลัง?')) {
+              await sendMsg('PHIMBOT_VAULT_DELETE', { id });
+              refreshVault();
+              showToast('ลบวีดีโอแล้ว');
+            }
+            break;
+        }
+      });
+    });
+  }
+
+  // Vault filter buttons
+  $$('.vault-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('.vault-filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      vaultFilter = btn.dataset.filter;
+      refreshVault();
+    });
+  });
+
+  // Sync / Import Videos from Google Flow Tool into Vault (Two-Tier Direct Storage)
+  $('#btnSyncFlowVideos')?.addEventListener('click', async () => {
+    const btn = $('#btnSyncFlowVideos');
+    btn.disabled = true;
+    btn.textContent = '⏳ กำลังสแกน...';
+    try {
+      const allTabs = await chrome.tabs.query({});
+      const flowTabs = allTabs.filter(t => t.url && (t.url.includes('flow.google.com') || t.url.includes('labs.google')));
+      if (!flowTabs.length) {
+        showToast('⚠️ ไม่พบแท็บ Google Flow ที่เปิดอยู่ — กรุณาเปิด Google Flow ก่อน');
+        btn.disabled = false;
+        btn.textContent = '📥 ดึงคลิปจาก Flow Tool';
+        return;
+      }
+
+      let importedCount = 0;
+      for (const tab of flowTabs) {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: tab.id, allFrames: true },
+          world: 'MAIN',
+          func: async () => {
+            const list = [];
+            if (Array.isArray(window.__FLOW_EXPORT_VIDEOS__) && window.__FLOW_EXPORT_VIDEOS__.length > 0) {
+              list.push(...window.__FLOW_EXPORT_VIDEOS__.splice(0, window.__FLOW_EXPORT_VIDEOS__.length));
+            }
+            if (Array.isArray(window.__FLOW_SCENE_FALLBACK_VIDEOS__) && window.__FLOW_SCENE_FALLBACK_VIDEOS__.length > 0 && list.length === 0) {
+              list.push(...window.__FLOW_SCENE_FALLBACK_VIDEOS__.splice(0, window.__FLOW_SCENE_FALLBACK_VIDEOS__.length));
+            }
+            if (Array.isArray(window.__FLOW_TOOL_VIDEOS__) && window.__FLOW_TOOL_VIDEOS__.length > 0) {
+              list.push(...window.__FLOW_TOOL_VIDEOS__.splice(0, window.__FLOW_TOOL_VIDEOS__.length));
+            }
+            // ดึงจาก <video src="blob:..."> ในหน้า Tool หากคิวว่าง
+            if (list.length === 0 && location.href.includes('scf.usercontent.goog')) {
+              const videoEls = Array.from(document.querySelectorAll('video'));
+              for (const v of videoEls) {
+                const src = v.currentSrc || v.src || '';
+                if (src.startsWith('blob:')) {
+                  try {
+                    const resp = await fetch(src);
+                    const blob = await resp.blob();
+                    if (blob.size > 45000 && blob.type.startsWith('video/')) {
+                      const b64 = await new Promise((res) => {
+                        const r = new FileReader();
+                        r.__phimbotInternal = true;
+                        r.onload = () => res(r.result);
+                        r.onerror = () => res('');
+                        r.readAsDataURL(blob);
+                      });
+                      if (b64) {
+                        const domPid = String(document.getElementById('tiktok-product-id')?.value || '').replace(/^PID_/i, '').trim();
+                        const domName = String(document.getElementById('active-product-name')?.value || '').trim();
+                        list.push({
+                          productId: domPid,
+                          productName: domName || 'สินค้าจาก AI SALER PRO',
+                          headline: (domName || 'คลิปจาก Google Flow') + ' รีวิวของดีบอกต่อ',
+                          videoBase64: b64,
+                          videoUrl: src,
+                          platform: 'tiktok'
+                        });
+                      }
+                    }
+                  } catch (_) {}
+                }
+              }
+            }
+            return list;
+          }
+        });
+
+        if (results && results.length) {
+          for (const r of results) {
+            const items = r.result || [];
+            for (const item of items) {
+              let vb64 = item.videoBase64 || item.dataUrl || '';
+              if (!vb64) continue;
+              if (vb64.startsWith('data:application/octet-stream')) {
+                vb64 = vb64.replace('data:application/octet-stream', 'data:video/mp4');
+              } else if (!vb64.startsWith('data:')) {
+                vb64 = 'data:video/mp4;base64,' + vb64;
+              }
+              if (vb64.length < 60000) continue;
+
+              const itemId = `vid_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+              const videoKey = `phimbot_video_${itemId}`;
+              await chrome.storage.local.set({ [videoKey]: vb64 });
+
+              const storeNow = await chrome.storage.local.get(['phimbot_media_vault']);
+              const vault = storeNow.phimbot_media_vault || [];
+              const fallbackProd = (typeof factoryProducts !== 'undefined' && factoryProducts[0]) ? factoryProducts[0] : {};
+              const cleanPid = String(item.productId || item.tiktokProductId || fallbackProd.productId || fallbackProd.id || '').replace(/^PID_/i, '').trim();
+              const cleanName = item.productName || item.title || fallbackProd.name || 'สินค้า Google Flow';
+              const cleanUrl = item.productUrl || item.affiliateUrl || fallbackProd.affiliateUrl || fallbackProd.productUrl || '';
+              const flowHashtags = resolveProductHashtags({ ...item, productId: cleanPid, productName: cleanName });
+              const pImg = resolveProductImage({ ...item, productId: cleanPid, productName: cleanName });
+              const vThumb = item.thumbnail || await generateVideoThumbnail(vb64);
+
+              vault.unshift({
+                id: itemId,
+                productId: cleanPid,
+                productName: cleanName,
+                productUrl: cleanUrl,
+                headline: item.headline || `${cleanName} รีวิวของดีบอกต่อ`,
+                videoBase64: '',
+                videoStorageKey: videoKey,
+                videoBase64Size: vb64.length,
+                videoUrl: item.videoUrl || '',
+                thumbnail: vThumb,
+                productImage: pImg,
+                caption: item.caption || `${cleanName} รีวิวของดีบอกต่อ`,
+                hashtags: flowHashtags,
+                platform: item.platform || (cleanUrl.includes('shopee') ? 'shopee' : 'tiktok'),
+                source: 'manual_sync',
+                createdAt: new Date().toISOString(),
+                posted: { tiktok: false, reels: false, shopee: false }
+              });
+              await chrome.storage.local.set({ phimbot_media_vault: vault });
+              importedCount++;
+            }
+          }
+        }
+      }
+
+      if (importedCount > 0) {
+        showToast(`🎉 ดึงคลิปเข้าคลังสำเร็จ ${importedCount} รายการ!`);
+        refreshVault();
+      } else {
+        showToast('ℹ️ ไม่พบคลิปใหม่ใน Google Flow');
+      }
+    } catch (e) {
+      console.warn('[VaultSync] Error:', e);
+      showToast('⚠️ ดึงคลิปล้มเหลว: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '📥 ดึงคลิปจาก Flow Tool';
+    }
+  });
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     VAULT BATCH SCHEDULE & SELECTION
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  function updateVaultBatchBarUI(filteredList) {
+    const list = filteredList || (currentVaultList || []);
+    const countEl = $('#vaultSelectedCount');
+    const toggleAll = $('#vaultSelectAllToggle');
+    const batchScheduleBtn = $('#btnVaultBatchSchedule');
+
+    // Clean up selectedVaultIds that no longer exist in currentVaultList
+    const validIds = new Set((currentVaultList || []).map(v => v.id));
+    for (const id of Array.from(selectedVaultIds)) {
+      if (!validIds.has(id)) selectedVaultIds.delete(id);
+    }
+
+    const count = selectedVaultIds.size;
+    if (countEl) countEl.textContent = count;
+    if (batchScheduleBtn) {
+      batchScheduleBtn.disabled = count === 0;
+      batchScheduleBtn.innerHTML = `⏰ ตั้งเวลาโพสต์ TikTok ที่เลือก (${count})`;
+    }
+
+    if (toggleAll) {
+      const visibleIds = (list.length > 0 ? list : (currentVaultList || [])).map(v => v.id);
+      const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedVaultIds.has(id));
+      const someVisibleSelected = visibleIds.some(id => selectedVaultIds.has(id));
+      toggleAll.checked = allVisibleSelected;
+      toggleAll.indeterminate = !allVisibleSelected && someVisibleSelected;
+    }
+  }
+
+  function formatTimelineDate(d) {
+    const thaiMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+    const day = d.getDate();
+    const month = thaiMonths[d.getMonth()];
+    const hours = String(d.getHours()).padStart(2, '0');
+    const mins = String(d.getMinutes()).padStart(2, '0');
+    return `${day} ${month} เวลา ${hours}:${mins} น.`;
+  }
+
+  function renderBatchTimelinePreview() {
+    const listContainer = $('#vBatchTimelineList');
+    const summaryEl = $('#vBatchTimelineSummary');
+    if (!listContainer) return;
+
+    const selectedList = (currentVaultList || []).filter(v => selectedVaultIds.has(v.id));
+    const publishMode = $('#vBatchPublishMode')?.value || 'scheduled';
+
+    if (selectedList.length === 0) {
+      listContainer.innerHTML = '<div style="color:var(--text-dim);text-align:center;padding:10px;">ไม่มีคลิปที่เลือก</div>';
+      if (summaryEl) summaryEl.textContent = '';
+      return;
+    }
+
+    if (publishMode !== 'scheduled') {
+      const modeText = publishMode === 'now' ? '⚡ โพสต์ทันทีทั้งหมด (เข้าคิวแบบทันที)'
+        : (publishMode === 'draft' ? '📝 บันทึกร่างทั้งหมด (Save Draft)' : '🔒 โพสต์ส่วนตัวทั้งหมด (Private)');
+      if (summaryEl) summaryEl.textContent = modeText;
+      listContainer.innerHTML = selectedList.map((item, idx) => `
+        <div style="display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:6px;background:var(--bg-card);">
+          <span style="font-weight:700;color:var(--accent);">#${idx + 1}</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.headline || item.productName || 'คลิป ' + (idx + 1)}</span>
+          <span style="font-size:9px;color:var(--text-dim);">${modeText}</span>
+        </div>
+      `).join('');
+      return;
+    }
+
+    const dateStr = $('#vBatchDate')?.value;
+    const timeStr = $('#vBatchTime')?.value;
+    if (!dateStr || !timeStr) {
+      listContainer.innerHTML = '<div style="color:#ef4444;text-align:center;padding:10px;">กรุณาเลือกวันที่และเวลาเริ่ม</div>';
+      if (summaryEl) summaryEl.textContent = '';
+      return;
+    }
+
+    const intervalVal = parseInt($('#vBatchIntervalVal')?.value || '30', 10);
+    const intervalUnit = $('#vBatchIntervalUnit')?.value || 'minutes';
+    const intervalMinutes = intervalUnit === 'hours' ? intervalVal * 60 : intervalVal;
+    const variationMinutes = parseInt($('#vBatchVariation')?.value || '0', 10);
+    const baseMs = new Date(`${dateStr}T${timeStr}`).getTime();
+
+    if (isNaN(baseMs)) {
+      listContainer.innerHTML = '<div style="color:#ef4444;text-align:center;padding:10px;">รูปแบบวันที่/เวลาไม่ถูกต้อง</div>';
+      return;
+    }
+
+    const nowMs = Date.now();
+    let minTimeMs = Infinity;
+    let maxTimeMs = -Infinity;
+
+    const rowsHtml = selectedList.map((item, idx) => {
+      const stepMs = idx * intervalMinutes * 60000;
+      let variationMs = 0;
+      if (variationMinutes > 0 && idx > 0) {
+        const seed = (idx * 2654435761) >>> 0;
+        const normalized = (seed % (2 * variationMinutes * 10 + 1)) / 10 - variationMinutes;
+        variationMs = normalized * 60000;
+      }
+      const target = new Date(baseMs + stepMs + variationMs);
+      target.setMinutes(Math.round(target.getMinutes() / 5) * 5);
+      target.setSeconds(0, 0);
+
+      // Warning if < 15 mins in future
+      const isTooSoon = target.getTime() < (nowMs + 15 * 60000);
+
+      if (target.getTime() < minTimeMs) minTimeMs = target.getTime();
+      if (target.getTime() > maxTimeMs) maxTimeMs = target.getTime();
+
+      const timeBadgeStyle = isTooSoon
+        ? 'background:rgba(239,68,68,0.15);color:#ef4444;font-weight:700;'
+        : 'background:rgba(34,197,94,0.15);color:#22c55e;font-weight:700;';
+      const warningTag = isTooSoon ? ' ⚠️ (สั้นกว่า 15 นาที)' : '';
+
+      return `
+        <div style="display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:6px;background:var(--bg-card);">
+          <span style="font-weight:700;color:var(--accent);">#${idx + 1}</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${item.headline || item.productName || ''}">${item.headline || item.productName || 'คลิป ' + (idx + 1)}</span>
+          <span style="padding:2px 6px;border-radius:4px;font-size:9px;white-space:nowrap;${timeBadgeStyle}">
+            ${formatTimelineDate(target)}${warningTag}
+          </span>
+        </div>
+      `;
+    }).join('');
+
+    listContainer.innerHTML = rowsHtml;
+
+    if (summaryEl && minTimeMs !== Infinity && maxTimeMs !== -Infinity) {
+      const minD = new Date(minTimeMs);
+      const maxD = new Date(maxTimeMs);
+      summaryEl.textContent = `${formatTimelineDate(minD)} - ${formatTimelineDate(maxD)}`;
+    }
+  }
+
+  function openVaultBatchScheduleModal() {
+    const selectedList = (currentVaultList || []).filter(v => selectedVaultIds.has(v.id));
+    if (selectedList.length === 0) {
+      showToast('⚠️ กรุณาเลือกคลิปอย่างน้อย 1 คลิปก่อนกดตั้งเวลา');
+      return;
+    }
+
+    const modal = $('#vaultScheduleModal');
+    if (!modal) return;
+
+    // Update count display
+    const countDisplay = $('#vBatchCountDisplay');
+    const confirmCount = $('#vBatchConfirmCount');
+    if (countDisplay) countDisplay.textContent = selectedList.length;
+    if (confirmCount) confirmCount.textContent = selectedList.length;
+
+    // Initialize default date & time (now + 25 mins rounded to 5 mins)
+    const now = new Date();
+    const start = new Date(now.getTime() + 25 * 60000);
+    start.setMinutes(Math.ceil(start.getMinutes() / 5) * 5);
+    start.setSeconds(0, 0);
+
+    const yyyy = start.getFullYear();
+    const mm = String(start.getMonth() + 1).padStart(2, '0');
+    const dd = String(start.getDate()).padStart(2, '0');
+    const hh = String(start.getHours()).padStart(2, '0');
+    const min = String(start.getMinutes()).padStart(2, '0');
+
+    if ($('#vBatchDate')) $('#vBatchDate').value = `${yyyy}-${mm}-${dd}`;
+    if ($('#vBatchTime')) $('#vBatchTime').value = `${hh}:${min}`;
+
+    // Publish mode visibility
+    const modeSel = $('#vBatchPublishMode');
+    const schedFields = $('#vBatchScheduleFields');
+    if (modeSel && schedFields) {
+      schedFields.style.display = modeSel.value === 'scheduled' ? 'block' : 'none';
+    }
+
+    renderBatchTimelinePreview();
+    modal.classList.remove('hidden');
+  }
+
+  async function executeBatchSchedule() {
+    const selectedList = (currentVaultList || []).filter(v => selectedVaultIds.has(v.id));
+    if (selectedList.length === 0) {
+      showToast('⚠️ กรุณาเลือกคลิปอย่างน้อย 1 คลิป');
+      return;
+    }
+
+    const confirmBtn = $('#btnConfirmBatchSchedule');
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '⏳ กำลังประมวลผล...';
+    }
+
+    const publishMode = $('#vBatchPublishMode')?.value || 'scheduled';
+    const dateStr = $('#vBatchDate')?.value;
+    const timeStr = $('#vBatchTime')?.value;
+    const intervalVal = parseInt($('#vBatchIntervalVal')?.value || '30', 10);
+    const intervalUnit = $('#vBatchIntervalUnit')?.value || 'minutes';
+    const intervalMinutes = intervalUnit === 'hours' ? intervalVal * 60 : intervalVal;
+    const variationMinutes = parseInt($('#vBatchVariation')?.value || '0', 10);
+    const baseMs = (publishMode === 'scheduled' && dateStr && timeStr) ? new Date(`${dateStr}T${timeStr}`).getTime() : 0;
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < selectedList.length; i++) {
+      const item = selectedList[i];
+      if (confirmBtn) confirmBtn.innerHTML = `⏳ บรรจุคลิป ${i + 1}/${selectedList.length}...`;
+
+      try {
+        const videoData = await loadVideoBase64(item);
+        if (!videoData) {
+          failCount++;
+          continue;
+        }
+
+        const pHashtags = (Array.isArray(item.hashtags) && item.hashtags.length) ? item.hashtags : resolveProductHashtags(item);
+        const prodTitle = (item.productName || item.headline || 'สินค้า').trim();
+        const shortName = prodTitle.length > 55 ? prodTitle.slice(0, 52) + '...' : prodTitle;
+        const tiktokHookVariations = [
+          `🔥 ไอเทมเด็ดต้องมี! ${shortName} ดีไซน์สวย ใช้งานดีมาก พิกัดในตะกร้าเลยจ้า ✨`,
+          `✨ ได้ลองแล้วเลิฟมาก! ${shortName} คุณภาพดีเกินราคา ป้ายยาในตะกร้าซ้ายล่างเลย 👇`,
+          `💖 บอกต่อของดี! ${shortName} ตัวนี้ตอบโจทย์มาก คุ้มค่าเกินราคา รีบจัดก่อนหมดโปรนะ ⚡`,
+          `💡 ใครเล็งตัวนี้อยู่แนะนำเลย! ${shortName} งานสวยตรงปก ใช้งานสะดวกมาก สั่งในตะกร้าได้เลย 👍`,
+          `🎉 ป้ายยาแรงๆ เลยทุกคน ${shortName} ไอเทมยอดฮิต รีวิวแน่น ใช้งานดีจริงไม่มีผิดหวัง 🛒`,
+          `⚡ ของมันต้องมีติดตัว! ${shortName} พกพาสะดวก คุณภาพคุ้มเกินราคา กดสั่งในตะกร้าเลย 💯`,
+          `🌟 รีวิวจากใจ! ${shortName} ตัวจริงสวยตรงปกมาก คุ้มค่าคุ้มราคา การันตีความถูกใจจ้า 💖`,
+          `🛒 ตัวนี้ปังมากทุกคน! ${shortName} ของดีบอกต่อ ใช้งานง่ายมาก พิกัดในตะกร้าเหลืองเลย 👇`
+        ];
+        const dynamicCaption = tiktokHookVariations[i % tiktokHookVariations.length];
+        const pImg = item.productImage || resolveProductImage(item);
+        const vThumb = item.thumbnail || await generateVideoThumbnail(videoData);
+
+        let scheduledAt = null;
+        if (publishMode === 'scheduled' && baseMs) {
+          const targetMs = baseMs + (i * intervalMinutes * 60000);
+          let variationMs = 0;
+          if (variationMinutes > 0 && i > 0) {
+            const seed = (i * 2654435761) >>> 0;
+            const normalized = (seed % (2 * variationMinutes * 10 + 1)) / 10 - variationMinutes;
+            variationMs = normalized * 60000;
+          }
+          const target = new Date(targetMs + variationMs);
+          target.setMinutes(Math.round(target.getMinutes() / 5) * 5);
+          target.setSeconds(0, 0);
+
+          // TikTok Studio rule: at least 15 mins in future
+          if (target.getTime() < Date.now() + 15 * 60000) {
+            target.setTime(Date.now() + (16 + i * intervalMinutes) * 60000);
+            target.setMinutes(Math.round(target.getMinutes() / 5) * 5);
+          }
+          scheduledAt = target.toISOString();
+        }
+
+        const catalogResolved = await resolveCatalogProduct(item, i);
+        const tiktokJob = {
+          id: `vault_batch_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+          videoDataUrl: videoData,
+          caption: dynamicCaption,
+          hashtags: pHashtags,
+          thumbnail: vThumb,
+          productImage: catalogResolved.productImage || pImg,
+          source: 'factory_vault',
+          productId: catalogResolved.productId,
+          publishMode: publishMode,
+          scheduledAt: scheduledAt,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          needsAiCaption: true,
+          aiContext: {
+            productName: catalogResolved.productName || prodTitle,
+            productDesc: item.headline || '',
+            videoIndex: i,
+            totalVideos: selectedList.length,
+          }
+        };
+
+        const qRes = await sendMsg('PHIMBOT_ADD_TO_QUEUE', tiktokJob);
+        if (qRes && qRes.success) {
+          await sendMsg('PHIMBOT_VAULT_MARK_POSTED', { id: item.id, platform: 'tiktok' });
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch (err) {
+        console.error('[VaultBatchSchedule] Error processing item:', item.id, err);
+        failCount++;
+      }
+    }
+
+    // Close modal
+    $('#vaultScheduleModal')?.classList.add('hidden');
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.innerHTML = `🚀 ยืนยันบรรจุเข้าคิว (<span id="vBatchConfirmCount">${selectedList.length}</span> คลิป)`;
+    }
+
+    // Clear selection
+    selectedVaultIds.clear();
+    refreshVault();
+
+    if (successCount > 0) {
+      await sendMsg('PHIMBOT_START_QUEUE');
+      showToast(`🎉 บรรจุเข้าคิว TikTok แล้ว ${successCount} คลิป และสั่งเริ่มโพสต์อัตโนมัติแล้ว!`);
+    } else {
+      showToast('❌ ไม่สามารถบรรจุคลิปเข้าคิวได้');
+    }
+  }
+
+  function initVaultBatchControls() {
+    // 1. Select All Toggle
+    $('#vaultSelectAllToggle')?.addEventListener('change', (e) => {
+      const checked = e.target.checked;
+      const visibleCards = $$('#vaultGrid .vault-card');
+      visibleCards.forEach(card => {
+        const id = card.dataset.id;
+        const chk = card.querySelector('.vault-item-chk');
+        if (chk) chk.checked = checked;
+        if (checked) {
+          if (id) selectedVaultIds.add(id);
+          card.classList.add('selected');
+        } else {
+          if (id) selectedVaultIds.delete(id);
+          card.classList.remove('selected');
+        }
+      });
+      updateVaultBatchBarUI();
+    });
+
+    // 2. Select Unposted Only
+    $('#btnVaultSelectUnposted')?.addEventListener('click', () => {
+      const unpostedItems = (currentVaultList || []).filter(v => !v.posted?.tiktok);
+      selectedVaultIds.clear();
+      unpostedItems.forEach(v => selectedVaultIds.add(v.id));
+
+      const visibleCards = $$('#vaultGrid .vault-card');
+      visibleCards.forEach(card => {
+        const id = card.dataset.id;
+        const isSelected = selectedVaultIds.has(id);
+        const chk = card.querySelector('.vault-item-chk');
+        if (chk) chk.checked = isSelected;
+        card.classList.toggle('selected', isSelected);
+      });
+      updateVaultBatchBarUI();
+      showToast(`เลือกคลิปที่ยังไม่โพสต์ TikTok ${unpostedItems.length} คลิป`);
+    });
+
+    // 3. Clear Selection
+    $('#btnVaultClearSelect')?.addEventListener('click', () => {
+      selectedVaultIds.clear();
+      const visibleCards = $$('#vaultGrid .vault-card');
+      visibleCards.forEach(card => {
+        const chk = card.querySelector('.vault-item-chk');
+        if (chk) chk.checked = false;
+        card.classList.remove('selected');
+      });
+      updateVaultBatchBarUI();
+    });
+
+    // 4. Open Batch Schedule Modal
+    $('#btnVaultBatchSchedule')?.addEventListener('click', openVaultBatchScheduleModal);
+
+    // 5. Modal Close Buttons
+    $('#btnCancelBatchSchedule')?.addEventListener('click', () => {
+      $('#vaultScheduleModal')?.classList.add('hidden');
+    });
+    $('#btnCancelBatchScheduleX')?.addEventListener('click', () => {
+      $('#vaultScheduleModal')?.classList.add('hidden');
+    });
+
+    // 6. Modal Inputs changes -> live timeline calculation
+    $('#vBatchPublishMode')?.addEventListener('change', (e) => {
+      const schedFields = $('#vBatchScheduleFields');
+      if (schedFields) {
+        schedFields.style.display = e.target.value === 'scheduled' ? 'block' : 'none';
+      }
+      renderBatchTimelinePreview();
+    });
+
+    ['#vBatchDate', '#vBatchTime', '#vBatchIntervalVal', '#vBatchIntervalUnit', '#vBatchVariation'].forEach(sel => {
+      $(sel)?.addEventListener('input', renderBatchTimelinePreview);
+      $(sel)?.addEventListener('change', renderBatchTimelinePreview);
+    });
+
+    // 7. Interval Quick Presets
+    $$('.v-interval-preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        $$('.v-interval-preset').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const val = btn.dataset.val;
+        const unit = btn.dataset.unit;
+        if ($('#vBatchIntervalVal')) $('#vBatchIntervalVal').value = val;
+        if ($('#vBatchIntervalUnit')) $('#vBatchIntervalUnit').value = unit;
+        renderBatchTimelinePreview();
+      });
+    });
+
+    // 8. Confirm Batch Schedule
+    $('#btnConfirmBatchSchedule')?.addEventListener('click', executeBatchSchedule);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     INIT
+     ═══════════════════════════════════════════════════════════════════════ */
+  // Initial render
+  renderFactoryProducts();
+  renderCharGrid();
+  initVaultBatchControls();
+  refreshVault();
+
+  // Load saved factory settings
+  (async () => {
+    const [res, gStore] = await Promise.all([
+      sendMsg('PHIMBOT_FACTORY_SETTINGS_GET'),
+      chrome.storage.local.get(['phimbot_factory_voice_gender']).catch(() => ({})),
+    ]);
+    if (res.success && res.settings) {
+      const s = res.settings;
+      if ($('#factoryImageModel')) $('#factoryImageModel').value = (s.imageModel && s.imageModel.includes('Banana')) ? s.imageModel : '🍌 Nano Banana Pro';
+      if ($('#factoryVideoModel')) $('#factoryVideoModel').value = s.videoModel || 'Veo 3.1 - Lite [Lower Priority]';
+      if ($('#factoryDuration')) $('#factoryDuration').value = String(s.duration || 8);
+      if ($('#factorySceneCount')) $('#factorySceneCount').value = String(s.sceneCount || 1);
+      if ($('#factoryIdeaCount')) $('#factoryIdeaCount').value = String(s.ideaCount || 1);
+      factoryMode = s.mode || 'influencer';
+      const resolvedGender = gStore?.phimbot_factory_voice_gender || s.voiceGender || 'female';
+      setFactoryGenderUI(resolvedGender, false, false);
+    }
+  })();
+
+  // Auto-save settings on change
+  ['#factoryImageModel', '#factoryVideoModel', '#factoryDuration', '#factorySceneCount', '#factoryIdeaCount'].forEach(sel => {
+    $(sel)?.addEventListener('change', () => {
+      sendMsg('PHIMBOT_FACTORY_SETTINGS_SAVE', {
+        imageModel: $('#factoryImageModel')?.value,
+        videoModel: $('#factoryVideoModel')?.value,
+        duration: parseInt($('#factoryDuration')?.value || '8', 10),
+        sceneCount: parseInt($('#factorySceneCount')?.value || '1', 10),
+        ideaCount: parseInt($('#factoryIdeaCount')?.value || '1', 10),
+        mode: factoryMode,
+        voiceGender: factoryVoice
+      });
+    });
+  });
+
+  // ── Expose Antigravity Live Test API on window.__AG_FACTORY_API__ ──
+  window.__AG_FACTORY_API__ = {
+    getState: () => ({
+      factoryProductsCount: factoryProducts.length,
+      factoryProducts: factoryProducts.map(p => ({
+        id: p.id,
+        name: p.name,
+        tiktokProductId: p.tiktokProductId,
+        cleanPid: cleanProductId(p.tiktokProductId || p.id),
+        imagesCount: Array.isArray(p.images) ? p.images.length : 0,
+        productUrl: p.productUrl || '',
+        platform: p.platform || '',
+      })),
+      charImagesCount: factoryCharImages.length,
+      factoryMode,
+      factoryVoice,
+      isFactoryBusy,
+      currentVaultCount: (currentVaultList || []).length,
+    }),
+    setFactoryProducts: (prods) => {
+      factoryProducts = Array.isArray(prods) ? prods : [];
+      window.__phimbotFactoryProducts = factoryProducts;
+      renderFactoryProducts();
+      return factoryProducts.length;
+    },
+    setCharImages: (imgs, voiceGender) => {
+      factoryCharImages = Array.isArray(imgs) ? imgs : [];
+      window.__phimbotFactoryCharImages = factoryCharImages;
+      if (voiceGender === 'male' || voiceGender === 'female') {
+        setFactoryGenderUI(voiceGender, true, true);
+      }
+      renderCharGrid();
+      return { charImagesCount: factoryCharImages.length, factoryVoice };
+    },
+    setFactoryGenderUI,
+    resolveCatalogProduct,
+    cleanProductId,
+    refreshVault,
+    executeAutoPostTarget,
+  };
+
+})();

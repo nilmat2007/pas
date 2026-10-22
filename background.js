@@ -165,16 +165,41 @@ async function callOpenRouter({ action, prompt, maxTokens }) {
   const tokenLimit = maxTokens || 1024;
   try {
     const config = await storageGet(['openrouter_api_key', 'phimbot_gemini_key', 'openrouter_model', 'phimbot_api_provider']);
-    const provider = config.phimbot_api_provider || 'openrouter';
+    let provider = config.phimbot_api_provider || 'openrouter';
     const model = config.openrouter_model || 'google/gemini-2.5-flash';
     const systemPrompt = buildSystemPrompt(action);
 
+    let openRouterKey = (config.openrouter_api_key || '').trim();
+    let geminiKey = (config.phimbot_gemini_key || '').trim();
+
+    // Auto-detect if customer pasted Gemini key (AIza...) into OpenRouter box or vice versa
+    if (!geminiKey && openRouterKey.startsWith('AIza')) {
+      geminiKey = openRouterKey;
+    }
+    if (!openRouterKey && geminiKey.startsWith('sk-or-')) {
+      openRouterKey = geminiKey;
+    }
+
+    // Auto-fallback provider if customer filled one key without switching provider dropdown
+    if (provider === 'gemini' && !geminiKey && openRouterKey && !openRouterKey.startsWith('AIza')) {
+      provider = 'openrouter';
+    } else if (provider !== 'gemini' && (!openRouterKey || openRouterKey.startsWith('AIza')) && geminiKey) {
+      provider = 'gemini';
+    }
+
     if (provider === 'gemini') {
-      const apiKey = config.phimbot_gemini_key;
-      if (!apiKey) return { success: false, error: 'กรุณาใส่ Gemini API Key ในหน้าตั้งค่า' };
-      let geminiModel = 'gemini-1.5-flash';
-      if (model.includes('gemini')) { geminiModel = model.split('/').pop(); }
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
+      if (!geminiKey) {
+        return { success: false, error: 'กรุณาใส่ Gemini API Key (AIza...) หรือ OpenRouter API Key ในแท็บ "ตั้งค่า" ก่อนใช้งาน AI' };
+      }
+      let geminiModel = 'gemini-2.5-flash';
+      if (model.includes('gemini')) {
+        const candidate = model.split('/').pop().replace(/:free$/i, '').trim();
+        // Avoid retired 1.5 models on Google's direct v1beta endpoint
+        if (candidate && !candidate.includes('1.5')) {
+          geminiModel = candidate;
+        }
+      }
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`;
       const response = await fetch(geminiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -188,20 +213,21 @@ async function callOpenRouter({ action, prompt, maxTokens }) {
       const data = await response.json();
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
       if (!text) return { success: false, error: 'AI ไม่ส่งข้อความกลับมา' };
-      return { success: true, text };
+      return { success: true, text, provider: 'gemini', model: geminiModel };
     } else {
-      const apiKey = config.openrouter_api_key;
-      if (!apiKey) return { success: false, error: 'กรุณาใส่ OpenRouter API Key ในหน้าตั้งค่า' };
+      if (!openRouterKey) {
+        return { success: false, error: 'กรุณาใส่ OpenRouter API Key หรือสลับเป็นผู้ให้บริการ Google Gemini ในแท็บ "ตั้งค่า" ก่อนใช้งาน AI' };
+      }
       const response = await fetch(OPENROUTER_API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': chrome.runtime.getURL('/'), 'X-Title': 'PhimBot' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openRouterKey}`, 'HTTP-Referer': chrome.runtime.getURL('/'), 'X-Title': 'PhimBot' },
         body: JSON.stringify({ model, messages: [ { role: 'system', content: systemPrompt }, { role: 'user', content: prompt } ], max_tokens: tokenLimit, temperature: 0.7 }),
       });
       if (!response.ok) { const body = await response.text().catch(() => ''); return { success: false, error: `OpenRouter Error ${response.status}: ${body || response.statusText}` }; }
       const data = await response.json();
       const text = data?.choices?.[0]?.message?.content?.trim() ?? '';
       if (!text) return { success: false, error: 'AI ไม่ส่งข้อความกลับมา' };
-      return { success: true, text };
+      return { success: true, text, provider: 'openrouter', model };
     }
   } catch (err) {
     console.error('[PhimBot] API error:', err);
@@ -2057,10 +2083,27 @@ Concept: ${concept}
         }
 
         case 'PHIMBOT_OPEN_FLOW_LOGIN': {
+          const DEFAULT_FLOW_SHARED_URL = 'https://flow.google.com/shared/tool/9e80057a-5cea-4b08-99d4-a9bfea111099';
           const stFlow = await storageGet(['phimbot_flow_tool_url']);
-          const targetFlowUrl = stFlow?.phimbot_flow_tool_url || 'https://flow.google.com/project/6e488c48-d736-4586-9466-e3ad189813e7/tool/4365c4fb-023d-40be-82e6-8b4d0d080c4c?mode=APP';
+          const savedUrl = String(stFlow?.phimbot_flow_tool_url || '');
+          const targetFlowUrl = (savedUrl && !savedUrl.includes('4365c4fb-023d-40be-82e6-8b4d0d080c4c'))
+            ? savedUrl
+            : DEFAULT_FLOW_SHARED_URL;
           const flowTab = await chrome.tabs.create({ url: targetFlowUrl, active: true });
+          // Auto-handle "Try in a project" -> select project -> "Open" -> "Done" in background
+          ensureFlowToolReadyInTab(flowTab.id).catch(() => {});
           sendResponse({ success: true, tabId: flowTab.id, url: targetFlowUrl });
+          break;
+        }
+
+        case 'PHIMBOT_ENSURE_FLOW_TOOL_READY': {
+          const targetTabId = payload?.tabId || await findGoogleFlowTabId();
+          if (!targetTabId) {
+            sendResponse({ ok: false, error: 'No Google Flow tab found' });
+            break;
+          }
+          const readyRes = await ensureFlowToolReadyInTab(targetTabId);
+          sendResponse(readyRes);
           break;
         }
 
@@ -3747,10 +3790,12 @@ async function prepareFbReelsUpload(payload) {
     return true;
   }
 
-  function findFinalReelsSubmitButton({ allowPostFallback = false, includeDisabled = false } = {}) {
+  function findFinalReelsSubmitButton({ allowPostFallback = false, preferPost = false, includeDisabled = false } = {}) {
     const scheduleLabels = ['กำหนดเวลา', 'schedule'];
     const postLabels = ['โพสต์', 'post'];
-    const labels = allowPostFallback ? [...scheduleLabels, ...postLabels] : scheduleLabels;
+    const labels = preferPost
+      ? [...postLabels, ...(allowPostFallback ? scheduleLabels : [])]
+      : (allowPostFallback ? [...scheduleLabels, ...postLabels] : scheduleLabels);
     const normalize = (s) => String(s || '')
       .normalize('NFC')
       .replace(/[\s\u200B-\u200D\uFEFF]+/g, ' ')
@@ -3811,7 +3856,8 @@ async function prepareFbReelsUpload(payload) {
       const role = String(clickable.getAttribute?.('role') || '').toLowerCase();
       const tag = String(clickable.tagName || '').toLowerCase();
       const matched = labels.find((label) => normalize(label) === matchedValue.normalized) || matchedValue.raw;
-      let score = /กำหนดเวลา|schedule/i.test(matched) ? 120 : 80;
+      const isScheduleLabel = /กำหนดเวลา|schedule/i.test(matched);
+      let score = preferPost ? (isScheduleLabel ? 80 : 120) : (isScheduleLabel ? 120 : 80);
       if (tag === 'button' || role === 'button') score += 30;
       if (seed.getAttribute?.('aria-label')) score += 15;
       if (rect.top >= window.innerHeight * 0.5) score += 20;
@@ -3828,8 +3874,10 @@ async function prepareFbReelsUpload(payload) {
     }
     if (!candidates.length) return null;
 
-    const scheduleCandidates = candidates.filter((candidate) => /กำหนดเวลา|schedule/i.test(String(candidate.label || '')));
-    const rankedCandidates = scheduleCandidates.length ? scheduleCandidates : candidates;
+    const preferredCandidates = preferPost
+      ? candidates.filter((candidate) => /^โพสต์$|^post$/i.test(String(candidate.label || '').trim()))
+      : candidates.filter((candidate) => /กำหนดเวลา|schedule/i.test(String(candidate.label || '')));
+    const rankedCandidates = preferredCandidates.length ? preferredCandidates : candidates;
     rankedCandidates.sort((a, b) => {
       if (a.disabled !== b.disabled) return a.disabled ? 1 : -1;
       if (b.score !== a.score) return b.score - a.score;
@@ -3946,7 +3994,8 @@ async function prepareFbReelsUpload(payload) {
     try {
       const sel = window.getSelection();
       const range = document.createRange();
-      range.selectNodeContents(el);
+      const targetNode = el.lastElementChild || el;
+      range.selectNodeContents(targetNode);
       range.collapse(false);
       sel.removeAllRanges();
       sel.addRange(range);
@@ -3958,9 +4007,8 @@ async function prepareFbReelsUpload(payload) {
     let ok = false;
     try { ok = document.execCommand('insertParagraph', false, null); } catch (_) {}
     if (!ok) {
-      try { ok = document.execCommand('insertHTML', false, '<br>'); } catch (_) {}
+      try { ok = document.execCommand('insertLineBreak', false, null); } catch (_) {}
     }
-    dispatchEditorEvents(el, 'insertParagraph');
     return ok;
   }
 
@@ -3977,24 +4025,18 @@ async function prepareFbReelsUpload(payload) {
     }
     if (!inserted) {
       try {
-        inserted = document.execCommand('insertHTML', false, value.replace(/[&<>"']/g, ch => ({
-          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-        }[ch])));
-      } catch (_) {
-        inserted = false;
-      }
+        const dt = new DataTransfer();
+        dt.setData('text/plain', value);
+        el.dispatchEvent(new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertFromPaste',
+          data: value,
+          dataTransfer: dt
+        }));
+      } catch (_) {}
     }
-    dispatchEditorEvents(el, 'insertText');
     return inserted;
-  }
-
-  function dispatchEditorEvents(el, inputType = 'insertText') {
-    if (!el) return;
-    try { el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType })); } catch (_) {}
-    try { el.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType })); } catch (_) {}
-    try { el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true })); } catch (_) {}
-    try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
-    try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Process', code: 'Process' })); } catch (_) {}
   }
 
   async function replaceEditorText(editor, text) {
@@ -4002,50 +4044,66 @@ async function prepareFbReelsUpload(payload) {
     const cleanText = String(text || '').replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
     if (!cleanText) return true;
 
+    // If editor DOM was previously wiped empty, restore a paragraph node for Lexical
+    if (!editor.innerHTML || !editor.innerHTML.trim()) {
+      try { editor.innerHTML = '<p><br></p>'; } catch (_) {}
+      await sleep(80);
+    }
+
+    try { editor.click(); } catch (_) {}
     editor.focus();
     await sleep(150);
 
-    // 1. Clear editor completely
-    try {
-      const sel = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      sel.removeAllRanges();
-      sel.addRange(range);
-      document.execCommand('delete', false, null);
-    } catch (_) {}
-    try {
-      document.execCommand('selectAll', false, null);
-      document.execCommand('delete', false, null);
-    } catch (_) {}
-    try {
-      editor.textContent = '';
-      editor.innerHTML = '';
-    } catch (_) {}
-    await sleep(100);
-
-    // 2. Insert lines natively with zero-width space spacer for empty lines
-    const lines = cleanText.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      if (i > 0) {
-        insertEditorBreak(editor);
-        await sleep(30);
-      }
-      const line = lines[i];
-      if (line) {
-        insertEditorTextNative(editor, line);
-      } else {
-        // Zero-width space preserves blank line in Lexical editor
-        try { document.execCommand('insertText', false, '\u200B'); } catch (_) {}
-      }
-      await sleep(20);
+    // 1. Clear existing text ONLY if non-empty (NEVER set innerHTML='' or textContent='' on Lexical!)
+    const existingText = String(editor.innerText || editor.textContent || '').replace(/[\s\u200B]+/g, '');
+    if (existingText.length > 0) {
+      try {
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+      } catch (_) {}
+      await sleep(100);
     }
 
-    dispatchEditorEvents(editor, 'insertReplacementText');
-    await sleep(100);
-    log('✅ ใส่ข้อความแคปชั่นเรียบร้อย: ' + cleanText.slice(0, 40) + '...');
-    editor.blur();
-    return true;
+    // 2. Method A: Try ClipboardEvent('paste') with full multiline text first (Lexical native handler)
+    try {
+      focusEditorEnd(editor);
+      const dt = new DataTransfer();
+      dt.setData('text/plain', cleanText);
+      const pasteEvent = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dt
+      });
+      editor.dispatchEvent(pasteEvent);
+    } catch (_) {}
+    await sleep(250);
+
+    let afterText = String(editor.innerText || editor.textContent || '').replace(/[\s\u200B]+/g, '');
+    const expectedSample = cleanText.replace(/\s+/g, '').slice(0, 15);
+
+    // 3. Method B: If paste did not populate Lexical, use native execCommand line-by-line
+    if (!afterText || (expectedSample && !afterText.includes(expectedSample))) {
+      const lines = cleanText.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (i > 0) {
+          insertEditorBreak(editor);
+          await sleep(35);
+        }
+        const line = lines[i];
+        if (line) {
+          insertEditorTextNative(editor, line);
+        } else {
+          // Zero-width space preserves blank line in Lexical editor
+          try { document.execCommand('insertText', false, '\u200B'); } catch (_) {}
+        }
+        await sleep(25);
+      }
+      await sleep(150);
+    }
+
+    const finalCheck = String(editor.innerText || editor.textContent || '').trim();
+    log('✅ ใส่ข้อความแคปชั่นเรียบร้อย (' + finalCheck.length + ' ตัวอักษร): ' + cleanText.slice(0, 40) + '...');
+    return finalCheck.length > 0;
   }
 
   function findAiLabelToggle() {
@@ -4388,8 +4446,9 @@ async function prepareFbReelsUpload(payload) {
         // Step 10.7: Check Dry-Run Verified Mode before clicking final submit button
         const dryCfgSched = await chrome.storage.local.get(['ag_e2e_dry_run']);
         if (dryCfgSched?.ag_e2e_dry_run) {
+          const capCheck = String(captionField?.innerText || captionField?.textContent || '').trim();
           log(`🛡️ [DRY-RUN VERIFIED] พบปุ่ม “${submitBtn.label}” พร้อมกดแล้ว — หยุดก่อนกดปุ่มเผยแพร่จริงตามโหมดทดสอบปลอดภัย`, 'ok');
-          return { ok: true, dryRunVerified: true, posted: false, scheduled: true, buttonLabel: submitBtn.label, nextClicks, reachedCaptionPage };
+          return { ok: true, dryRunVerified: true, posted: false, scheduled: true, buttonLabel: submitBtn.label, captionInEditor: capCheck, nextClicks, reachedCaptionPage };
         }
 
         log(`🖱️ กำลังกดปุ่ม “${submitBtn.label}”...`);
@@ -4419,17 +4478,22 @@ async function prepareFbReelsUpload(payload) {
         }
       } else {
         // Immediate post
-        log('Immediate post mode. Waiting for copyright check...');
+        log('Immediate post mode. Checking copyright / post button readiness...');
         let isSafe = false;
-        for (let i = 0; i < 60; i++) {
+        for (let i = 0; i < 30; i++) {
           const t = pageText();
           if (t.includes('ปลอดภัยที่จะเผยแพร่') || t.includes('safe to share') || t.includes('safe to post')) {
             isSafe = true; break;
           }
-          if (t.includes('กำลังตรวจหาเนื้อหาที่มีลิขสิทธิ์') || t.includes('checking for copyrighted')) {
-            await sleep(2000); continue;
+          const isCheckingCopyright = t.includes('กำลังตรวจหาเนื้อหาที่มีลิขสิทธิ์') || t.includes('checking for copyrighted');
+          if (!isCheckingCopyright && i >= 2) {
+            const readyBtn = findFinalReelsSubmitButton({ allowPostFallback: true, preferPost: true, includeDisabled: false });
+            if (readyBtn && readyBtn.ready) {
+              isSafe = true;
+              break;
+            }
           }
-          await sleep(2000);
+          await sleep(1500);
         }
         log('Copyright check: ' + (isSafe ? 'safe' : 'timeout/unknown'));
         await sleep(1000);
@@ -4438,7 +4502,7 @@ async function prepareFbReelsUpload(payload) {
         let postBtn = null;
         const waitPostStart = Date.now();
         while (Date.now() - waitPostStart < 35000) {
-          postBtn = findFinalReelsSubmitButton({ allowPostFallback: true, includeDisabled: true });
+          postBtn = findFinalReelsSubmitButton({ allowPostFallback: true, preferPost: true, includeDisabled: true });
           if (postBtn) {
             if (postBtn.ready) {
               log(`🔵 พบปุ่ม “${postBtn.label}” และพร้อมกดแล้ว!`, 'ok');
@@ -4465,8 +4529,9 @@ async function prepareFbReelsUpload(payload) {
 
         const dryCfgPost = await chrome.storage.local.get(['ag_e2e_dry_run']);
         if (dryCfgPost?.ag_e2e_dry_run) {
+          const capCheck = String(captionField?.innerText || captionField?.textContent || '').trim();
           log(`🛡️ [DRY-RUN VERIFIED] พบปุ่ม “${postBtn.label}” พร้อมกดแล้ว — หยุดก่อนกดปุ่มโพสต์จริงตามโหมดทดสอบปลอดภัย`, 'ok');
-          return { ok: true, dryRunVerified: true, posted: false, scheduled: false, buttonLabel: postBtn.label, nextClicks, reachedCaptionPage };
+          return { ok: true, dryRunVerified: true, posted: false, scheduled: false, buttonLabel: postBtn.label, captionInEditor: capCheck, nextClicks, reachedCaptionPage };
         }
 
         log(`🖱️ กำลังกดปุ่ม “${postBtn.label}”...`);
@@ -5922,6 +5987,147 @@ async function findGoogleFlowTabId(preferredTabId) {
   return flowTab ? flowTab.id : null;
 }
 
+async function ensureFlowToolReadyInTab(tabId) {
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const steps = [];
+  try {
+    // 1. Wait up to 10s for tab initial load
+    for (let i = 0; i < 10; i++) {
+      const t = await chrome.tabs.get(tabId).catch(() => null);
+      if (!t) return { ok: false, error: 'Tab closed' };
+      if (t.status === 'complete') break;
+      await sleep(1000);
+    }
+
+    const checkAppFrameReady = async () => {
+      try {
+        const frames = await Promise.race([
+          chrome.scripting.executeScript({
+            target: { tabId, allFrames: true },
+            world: 'MAIN',
+            func: () => Boolean(
+              document.getElementById('tiktok-product-id') ||
+              document.getElementById('active-product-name') ||
+              document.getElementById('start-factory')
+            )
+          }),
+          new Promise(r => setTimeout(() => r([]), 3000))
+        ]);
+        return Array.isArray(frames) && frames.some(f => f?.result === true);
+      } catch (_) {
+        return false;
+      }
+    };
+
+    // 2. If already mounted, close Tool Builder ("Done") if open and save URL
+    if (await checkAppFrameReady()) {
+      steps.push('app_frame_already_ready');
+    } else {
+      // 3. Check if we are on /shared/tool/ or have "Try in a project" button
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const [mainRes] = await chrome.scripting.executeScript({
+          target: { tabId, allFrames: false },
+          world: 'MAIN',
+          func: async () => {
+            const delay = (ms) => new Promise(r => setTimeout(r, ms));
+            const getBtns = () => Array.from(document.querySelectorAll('button, [role="button"], a[role="button"]')).filter(b => b.offsetWidth > 0);
+            const localSteps = [];
+
+            let btns = getBtns();
+            let openBtn = btns.find(b => /^(Open|เปิด|Create|สร้าง)$/i.test((b.innerText || b.textContent || '').trim()));
+            if (!openBtn) {
+              const tryBtn = btns.find(b => /try in a project|ลองใช้ในโปรเจ็กต์|ลองในโปรเจ็กต์|open in project|use tool/i.test((b.innerText || b.textContent || '').trim()));
+              if (tryBtn) {
+                tryBtn.click();
+                localSteps.push('clicked_try_in_project');
+                await delay(1200);
+              }
+            }
+
+            btns = getBtns();
+            openBtn = btns.find(b => /^(Open|เปิด)$/i.test((b.innerText || b.textContent || '').trim()));
+            if (openBtn) {
+              if (openBtn.disabled || openBtn.getAttribute('aria-disabled') === 'true') {
+                const projectBtn = btns.find(b => {
+                  const t = (b.innerText || b.textContent || '').replace(/\s+/g, ' ').trim();
+                  return (/^(New project|โปรเจ็กต์ใหม่|Create|สร้าง|Oct |Nov |Dec |Jan |Feb |Mar |Apr |May |Jun |Jul |Aug |Sep |folder )/i.test(t) || b.closest('[role="dialog"]'))
+                    && !/^(close|Cancel|ยกเลิก|Open|เปิด|Try in a project|Back to Google Flow)$/i.test(t);
+                });
+                if (projectBtn) {
+                  projectBtn.click();
+                  localSteps.push('selected_project:' + (projectBtn.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 40));
+                  await delay(650);
+                }
+              }
+              btns = getBtns();
+              openBtn = btns.find(b => /^(Open|เปิด)$/i.test((b.innerText || b.textContent || '').trim()));
+              if (openBtn && !openBtn.disabled) {
+                openBtn.click();
+                localSteps.push('clicked_open');
+              }
+            }
+            return { localSteps, href: location.href };
+          }
+        }).catch(() => [{}]);
+
+        if (mainRes?.result?.localSteps?.length) {
+          steps.push(...mainRes.result.localSteps);
+        }
+        if (steps.includes('clicked_open')) break;
+        if (await checkAppFrameReady()) {
+          steps.push('app_frame_ready');
+          break;
+        }
+        await sleep(1200);
+      }
+
+      // 4. Wait up to 18s for Compiler Frame to finish and App iframe to mount
+      for (let w = 0; w < 18; w++) {
+        if (await checkAppFrameReady()) {
+          steps.push(`app_frame_mounted_after_${w}s`);
+          break;
+        }
+        await sleep(1000);
+      }
+    }
+
+    // 5. Close Tool Builder side-panel if open (click the 'close' icon next to 'bug_report', NEVER 'Done' which exits the tool)
+    try {
+      const [closePanelRes] = await chrome.scripting.executeScript({
+        target: { tabId, allFrames: false },
+        world: 'MAIN',
+        func: () => {
+          const btns = Array.from(document.querySelectorAll('button, [role="button"]')).filter(b => b.offsetWidth > 0);
+          const bugIdx = btns.findIndex(b => (b.innerText || b.textContent || '').trim() === 'bug_report');
+          if (bugIdx !== -1 && btns[bugIdx + 1] && (btns[bugIdx + 1].innerText || btns[bugIdx + 1].textContent || '').trim() === 'close') {
+            btns[bugIdx + 1].click();
+            return true;
+          }
+          return false;
+        }
+      });
+      if (closePanelRes?.result) {
+        steps.push('closed_tool_builder_panel');
+        await sleep(400);
+      }
+    } catch (_) {}
+
+    // 6. Save instantiated /project/.../tool/... URL for future runs
+    const finalTab = await chrome.tabs.get(tabId).catch(() => null);
+    const finalUrl = finalTab?.url || '';
+    if (finalUrl.includes('/project/') && finalUrl.includes('/tool/') && !finalUrl.includes('4365c4fb-023d-40be-82e6-8b4d0d080c4c')) {
+      const urlToSave = finalUrl.includes('mode=APP') ? finalUrl : `${finalUrl}${finalUrl.includes('?') ? '&' : '?'}mode=APP`;
+      await chrome.storage.local.set({ phimbot_flow_tool_url: urlToSave }).catch(() => {});
+      steps.push('saved_tool_url:' + urlToSave);
+    }
+
+    const ready = await checkAppFrameReady();
+    return { ok: true, ready, tabId, url: finalUrl, steps };
+  } catch (err) {
+    return { ok: false, ready: false, tabId, error: err?.message || String(err), steps };
+  }
+}
+
 async function executeAntigravityCommand(cmdObj) {
   const { id, cmd, args = {} } = cmdObj;
   try {
@@ -6556,6 +6762,315 @@ async function executeAntigravityCommand(cmdObj) {
       };
     }
 
+    if (cmd === 'NAVIGATE_TAB') {
+      const targetUrl = args.url || 'https://flow.google.com/shared/tool/9e80057a-5cea-4b08-99d4-a9bfea111099';
+      let tabId = args.tabId;
+      if (tabId) {
+        await chrome.tabs.update(tabId, { url: targetUrl, active: Boolean(args.active) });
+      } else {
+        const created = await chrome.tabs.create({ url: targetUrl, active: Boolean(args.active) });
+        tabId = created.id;
+      }
+      const waitMs = args.waitMs || 7000;
+      await new Promise(r => setTimeout(r, waitMs));
+      const updatedTab = await chrome.tabs.get(tabId).catch(() => null);
+      return { ok: true, tabId, url: updatedTab?.url || targetUrl, title: updatedTab?.title || '', status: updatedTab?.status || '' };
+    }
+
+    if (cmd === 'INSPECT_TAB') {
+      const tabId = args.tabId;
+      if (!tabId) throw new Error('tabId required');
+      const [res] = await chrome.scripting.executeScript({
+        target: { tabId },
+        args: [args.testCaption || ''],
+        func: async (testCaption) => {
+          const sleep = ms => new Promise(r => setTimeout(r, ms));
+          if (testCaption) {
+            const editor = document.querySelector('[contenteditable="true"][data-lexical-editor="true"], [contenteditable="true"][aria-label*="อธิบายคลิป"], [contenteditable="true"][role="textbox"]');
+            if (editor) {
+              if (!editor.innerHTML || !editor.innerHTML.trim()) {
+                try { editor.innerHTML = '<p><br></p>'; } catch (_) {}
+                await sleep(80);
+              }
+              try { editor.click(); } catch (_) {}
+              editor.focus();
+              await sleep(150);
+              const existingText = String(editor.innerText || editor.textContent || '').replace(/[\s\u200B]+/g, '');
+              if (existingText.length > 0) {
+                try {
+                  document.execCommand('selectAll', false, null);
+                  document.execCommand('delete', false, null);
+                } catch (_) {}
+                await sleep(100);
+              }
+              try {
+                const dt = new DataTransfer();
+                dt.setData('text/plain', testCaption);
+                const pasteEvent = new ClipboardEvent('paste', {
+                  bubbles: true,
+                  cancelable: true,
+                  clipboardData: dt
+                });
+                editor.dispatchEvent(pasteEvent);
+              } catch (_) {}
+              await sleep(250);
+              let afterText = String(editor.innerText || editor.textContent || '').replace(/[\s\u200B]+/g, '');
+              if (!afterText) {
+                const lines = testCaption.split('\n');
+                for (let i = 0; i < lines.length; i++) {
+                  if (i > 0) {
+                    try { document.execCommand('insertParagraph', false, null); } catch (_) {}
+                    await sleep(35);
+                  }
+                  if (lines[i]) {
+                    try { document.execCommand('insertText', false, lines[i]); } catch (_) {}
+                  } else {
+                    try { document.execCommand('insertText', false, '\u200B'); } catch (_) {}
+                  }
+                  await sleep(25);
+                }
+                await sleep(150);
+              }
+            }
+          }
+          const editors = Array.from(document.querySelectorAll('[contenteditable="true"], textarea')).map(el => ({
+            tag: el.tagName,
+            ariaLabel: el.getAttribute('aria-label') || '',
+            text: (el.textContent || el.innerText || el.value || '').replace(/\s+/g, ' ').trim().slice(0, 500),
+            rawText: (el.textContent || el.innerText || el.value || '').trim().slice(0, 500),
+            htmlSnippet: (el.innerHTML || '').slice(0, 500),
+          }));
+          const btns = Array.from(document.querySelectorAll('button, [role="button"]'))
+            .filter(b => b.offsetWidth > 0)
+            .map(b => ({
+              text: (b.innerText || b.textContent || b.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 60),
+              disabled: Boolean(b.disabled || b.getAttribute('aria-disabled') === 'true'),
+            }))
+            .filter(b => b.text)
+            .slice(0, 35);
+          return {
+            url: location.href,
+            title: document.title,
+            editors,
+            buttons: btns,
+          };
+        }
+      });
+      if (args.closeAfter) {
+        try { await chrome.tabs.remove(tabId); } catch (_) {}
+      }
+      return { ok: true, tabId, inspect: res?.result || null };
+    }
+
+    if (cmd === 'FLOW_CLICK_TRY_AND_INSPECT') {
+      const allTabs = await chrome.tabs.query({});
+      const flowTabs = allTabs.filter(t => t.url && (t.url.includes('flow.google.com') || t.url.includes('labs.google')));
+      if (!flowTabs.length) return { ok: false, error: 'No flow.google.com tab open' };
+      const tab = flowTabs[0];
+
+      // Check if "Try in a project" button or project-picker dialog "Open" button is visible
+      const [clickRes] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: false },
+        world: 'MAIN',
+        args: [args.clickTry !== false],
+        func: async (shouldClick) => {
+          const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+          const getBtns = () => Array.from(document.querySelectorAll('button, [role="button"], a[role="button"]')).filter(b => b.offsetWidth > 0);
+          const steps = [];
+
+          if (shouldClick) {
+            // Step 1: If "Open" dialog isn't open yet, click "Try in a project"
+            let btns = getBtns();
+            let openBtn = btns.find(b => /^(Open|เปิด|Create|สร้าง)$/i.test((b.innerText || b.textContent || '').trim()));
+            if (!openBtn) {
+              const tryBtn = btns.find(b => /try in a project|ลองใช้ในโปรเจ็กต์|ลองในโปรเจ็กต์|open in project|use tool/i.test((b.innerText || b.textContent || '').trim()));
+              if (tryBtn) {
+                tryBtn.click();
+                steps.push('clicked_try_in_project');
+                await sleep(1200);
+              }
+            }
+
+            // Step 2: Inside the project picker modal, check if "Open" is enabled; if disabled, click the first project or New Project button
+            btns = getBtns();
+            openBtn = btns.find(b => /^(Open|เปิด)$/i.test((b.innerText || b.textContent || '').trim()));
+            if (openBtn) {
+              if (openBtn.disabled || openBtn.getAttribute('aria-disabled') === 'true') {
+                // Find a project item in the modal list (between 'close' and 'Cancel')
+                const projectBtn = btns.find(b => {
+                  const t = (b.innerText || b.textContent || '').replace(/\s+/g, ' ').trim();
+                  return (/^(New project|โปรเจ็กต์ใหม่|Oct |Nov |Dec |Jan |Feb |Mar |Apr |May |Jun |Jul |Aug |Sep |folder )/i.test(t) || b.closest('[role="dialog"]'))
+                    && !/^(close|Cancel|ยกเลิก|Open|เปิด|Try in a project|Back to Google Flow)$/i.test(t);
+                });
+                if (projectBtn) {
+                  projectBtn.click();
+                  steps.push('selected_project:' + (projectBtn.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 40));
+                  await sleep(600);
+                }
+              }
+              btns = getBtns();
+              openBtn = btns.find(b => /^(Open|เปิด)$/i.test((b.innerText || b.textContent || '').trim()));
+              if (openBtn && !openBtn.disabled) {
+                openBtn.click();
+                steps.push('clicked_open');
+              } else {
+                steps.push('open_btn_still_disabled');
+              }
+            }
+          }
+
+          return {
+            clickedTry: steps.length > 0,
+            steps,
+            beforeUrl: location.href,
+            availableButtons: getBtns().map(b => ({
+              text: (b.innerText || b.textContent || '').replace(/\s+/g, ' ').trim(),
+              disabled: Boolean(b.disabled || b.getAttribute('aria-disabled') === 'true')
+            })).filter(b => b.text)
+          };
+        }
+      });
+
+      if (clickRes?.result?.clickedTry) {
+        // Wait for redirect to /project/.../tool/... and iframe load
+        for (let w = 0; w < 20; w++) {
+          await new Promise(r => setTimeout(r, 1000));
+          const tNow = await chrome.tabs.get(tab.id).catch(() => null);
+          if (tNow?.url && tNow.url.includes('/project/') && tNow.url.includes('/tool/') && tNow.status === 'complete') {
+            break;
+          }
+        }
+        await new Promise(r => setTimeout(r, 4000));
+      }
+
+      const updatedTab = await chrome.tabs.get(tab.id).catch(() => tab);
+      const framesRes = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        world: 'MAIN',
+        func: () => {
+          const btns = Array.from(document.querySelectorAll('button, [role="button"], a[role="button"]'))
+            .map(b => (b.innerText || b.textContent || b.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim())
+            .filter(Boolean)
+            .slice(0, 35);
+          const inputs = Array.from(document.querySelectorAll('input, select, textarea')).map(el => ({
+            tag: el.tagName,
+            id: el.id || '',
+            name: el.name || '',
+            placeholder: el.placeholder || '',
+            value: String(el.value || '').slice(0, 80),
+          })).slice(0, 30);
+          return {
+            href: location.href,
+            title: document.title,
+            hasProductIdInput: Boolean(document.getElementById('tiktok-product-id')),
+            hasActiveProductName: Boolean(document.getElementById('active-product-name')),
+            hasInjectedPayload: Boolean(window.__PHIMBOT_INJECTED_PAYLOAD__),
+            buttons: btns,
+            inputs,
+            bodySnippet: (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 400),
+          };
+        }
+      });
+      return {
+        ok: true,
+        tabId: tab.id,
+        tabUrl: updatedTab?.url || tab.url,
+        clickTryResult: clickRes?.result || null,
+        frames: (framesRes || []).map(f => ({ frameId: f.frameId, ...(f.result || {}) })),
+      };
+    }
+
+    if (cmd === 'TEST_AI_GENERATE') {
+      const aiRes = await callOpenRouter({
+        action: args.action || 'generate_caption',
+        prompt: args.prompt || 'สินค้า: เตียงพับ FMD MALL พกพาสะดวก แข็งแรงทนทาน',
+        maxTokens: args.maxTokens || 256,
+      });
+      return { ok: Boolean(aiRes?.success), aiRes };
+    }
+
+    if (cmd === 'TEST_FB_REELS_DRY_RUN') {
+      await chrome.storage.local.set({ ag_e2e_dry_run: true });
+      const st = await chrome.storage.local.get(['phimbot_media_vault', 'phimbot_products']);
+      const vault = st.phimbot_media_vault || [];
+      const prods = st.phimbot_products || [];
+      const vItem = vault.find(v => v.id === args.vaultId) || vault[0];
+      if (!vItem) throw new Error('ไม่พบคลิปในคลังวีดีโอสำหรับทดสอบ Reels');
+
+      let videoDataUrl = vItem.videoBase64 || '';
+      const storageKey = vItem.videoStorageKey || vItem.videoKey || '';
+      if (!videoDataUrl && storageKey && storageKey !== 'storage_failed') {
+        const kv = await chrome.storage.local.get([storageKey]);
+        videoDataUrl = kv[storageKey] || '';
+      }
+      if (!videoDataUrl) throw new Error(`ไม่พบข้อมูลไฟล์วีดีโอสำหรับ ${vItem.id}`);
+
+      const matchedProd = prods[0] || {};
+      const prodUrl = vItem.productUrl || matchedProd.affiliateUrl || matchedProd.productUrl || 'https://s.shopee.co.th/example123';
+      const prodName = vItem.productName || matchedProd.name || 'FMD MALL เตียงพับอเนกประสงค์';
+      const rawHashtags = Array.isArray(vItem.hashtags) ? vItem.hashtags.join(' ') : (vItem.hashtags || '#รีวิวของดี #ป้ายยา #ส่งฟรี');
+      const fullCaption = `${prodName}\n\n🛒 พิกัดสินค้า: ${prodUrl}\n\n${rawHashtags}`;
+
+      const reelsRes = await runFbReelsPost({
+        mediaFiles: [{ name: `reels_test_${Date.now()}.mp4`, type: 'video/mp4', dataUrl: videoDataUrl }],
+        caption: fullCaption,
+        scheduleEnabled: Boolean(args.scheduleEnabled),
+        scheduleDate: args.scheduleDate || '',
+        scheduleTime: args.scheduleTime || '',
+        closeTabWhenDone: false,
+      });
+      return { ok: Boolean(reelsRes?.ok), captionSent: fullCaption, reelsRes };
+    }
+
+    if (cmd === 'TEST_META_AI_INSPECT') {
+      const allTabs = await chrome.tabs.query({});
+      let metaTab = allTabs.find(t => t.url && t.url.includes('meta.ai'));
+      if (!metaTab && args.openIfMissing) {
+        metaTab = await chrome.tabs.create({ url: 'https://www.meta.ai/', active: false });
+        await new Promise(r => setTimeout(r, 6000));
+      }
+      if (!metaTab) return { ok: false, reason: 'no_meta_tab' };
+      const [res] = await chrome.scripting.executeScript({
+        target: { tabId: metaTab.id },
+        func: () => {
+          const editor = document.querySelector('textarea, [contenteditable="true"][role="textbox"], div[contenteditable="true"]');
+          const buttons = Array.from(document.querySelectorAll('button, [role="button"]'))
+            .map(b => (b.getAttribute('aria-label') || b.innerText || '').replace(/\s+/g, ' ').trim())
+            .filter(Boolean)
+            .slice(0, 25);
+          return {
+            url: location.href,
+            title: document.title,
+            hasEditor: Boolean(editor),
+            editorTag: editor?.tagName || '',
+            editorPlaceholder: editor?.getAttribute('placeholder') || editor?.getAttribute('aria-label') || '',
+            buttonsSample: buttons,
+          };
+        }
+      });
+      return { ok: true, tabId: metaTab.id, inspect: res?.result || null };
+    }
+
+    if (cmd === 'TEST_SHOPEE_PREFLIGHT') {
+      const sampleCaption = args.caption || 'รีวิวเตียงพับ FMD MALL นอนสบายมาก พับเก็บง่าย พกพาไปแคมป์ปิ้งหรือใช้งีบหลับที่ออฟฟิศได้สบาย แข็งแรงทนทานสุดๆ แนะนำเลยต้องมีติดบ้านไว้เลยจ้า คุ้มราคามากๆ';
+      const sampleHashtags = args.hashtags || '#ShopeeTH #ShopeeVideo #รีวิวของดี #ป้ายยา #ของมันต้องมี #เตียงพับ';
+      const clamped = clampShopeePost(sampleCaption, sampleHashtags);
+      const combined = clamped.hashtags ? `${clamped.caption} ${clamped.hashtags}`.trim() : clamped.caption;
+      const syncStored = await chrome.storage.local.get('asu-clip-sync-settings');
+      const syncSettings = syncStored?.['asu-clip-sync-settings'] || null;
+      return {
+        ok: true,
+        clamped,
+        combinedLength: combined.length,
+        under140Limit: combined.length <= 140,
+        shortLinkCheckValid: isShopeeAffShortLink('https://s.shopee.co.th/7fI123abc'),
+        shortLinkCheckInvalid: isShopeeAffShortLink('https://shopee.co.th/product/123/456'),
+        syncSettingsConfigured: Boolean(syncSettings?.pairCode),
+        pairCode: syncSettings?.pairCode || '',
+        devicesCount: syncSettings?.devices?.length || 0,
+      };
+    }
+
     if (cmd === 'START_QUEUE') {
       processQueue();
       return { ok: true, isQueueRunning: true };
@@ -6581,8 +7096,20 @@ async function executeAntigravityCommand(cmdObj) {
   }
 }
 
+let _agBridgeEnabled = false;
+chrome.storage.local.get(['ag_bridge_enabled'], (res) => {
+  _agBridgeEnabled = Boolean(res?.ag_bridge_enabled);
+  if (_agBridgeEnabled) pollAntigravityBridgeOnce('bg_init');
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.ag_bridge_enabled) {
+    _agBridgeEnabled = Boolean(changes.ag_bridge_enabled.newValue);
+    if (_agBridgeEnabled) pollAntigravityBridgeOnce('bg_enable');
+  }
+});
+
 async function pollAntigravityBridgeOnce(src = 'bg') {
-  if (_agBridgePolling) return;
+  if (!_agBridgeEnabled || _agBridgePolling) return;
   _agBridgePolling = true;
   try {
     const ver = chrome.runtime.getManifest().version;
@@ -6616,8 +7143,9 @@ async function pollAntigravityBridgeOnce(src = 'bg') {
   }
 }
 
-setInterval(() => pollAntigravityBridgeOnce('bg'), 2000);
-pollAntigravityBridgeOnce('bg_init');
+setInterval(() => {
+  if (_agBridgeEnabled) pollAntigravityBridgeOnce('bg');
+}, 2000);
 
 async function setFlowToolGenderInBrowser(gender) {
   const targetGender = gender === 'male' ? 'male' : 'female';
@@ -6684,7 +7212,7 @@ async function detectCharacterGenderFromBase64(dataUrl) {
     // 1. Try Gemini API directly if key exists
     if (config.phimbot_gemini_key) {
       try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${config.phimbot_gemini_key}`;
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${config.phimbot_gemini_key}`;
         const resp = await fetch(geminiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

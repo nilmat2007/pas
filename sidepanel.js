@@ -113,6 +113,7 @@
 
   function selectProduct(product) {
     selectedProduct = product;
+    window.__phimbotSelectedProduct = product;
     selectedProductImg.src = product.imageUrl || '';
     selectedProductName.textContent = product.name;
     selectedProductMeta.textContent = `ID: ${product.productId} | ฿${(product.price || 0).toLocaleString()} | ${product.statusLabel || product.status || ''}`;
@@ -129,10 +130,12 @@
 
   function selectMultipleProducts(products) {
     selectedProducts = products;
+    window.__phimbotSelectedProducts = products;
     if (products.length === 1) {
       selectProduct(products[0]);
     } else if (products.length > 1) {
       selectedProduct = products[0]; // primary product
+      window.__phimbotSelectedProduct = products[0];
       selectedProductImg.src = products[0].imageUrl || '';
       selectedProductName.textContent = `${products.length} สินค้าที่เลือก`;
       selectedProductMeta.textContent = products.map((p) => p.name).join(', ');
@@ -148,6 +151,8 @@
   clearSelectedProduct?.addEventListener('click', () => {
     selectedProduct = null;
     selectedProducts = [];
+    window.__phimbotSelectedProduct = null;
+    window.__phimbotSelectedProducts = [];
     selectedProductCard.classList.add('hidden');
     productPickerCard.classList.remove('hidden');
     noProductHint?.classList.remove('hidden');
@@ -2126,11 +2131,11 @@ function formatReelsCaption({ caption = '', affiliateUrl = '', hashtags = '' } =
     if (settingsZoom) settingsZoom.value = zoom;
     document.body.style.zoom = zoom;
 
-    const curVer = chrome.runtime.getManifest()?.version || '1.2.7';
+    const curVer = chrome.runtime.getManifest()?.version || '1.3.6';
     const extCurVerEl = $('#extCurrentVer');
     if (extCurVerEl) extCurVerEl.textContent = `v${curVer}`;
     const hdrVerEl = $('#headerVersionBadge');
-    if (hdrVerEl) hdrVerEl.textContent = `v${curVer} 🔄`;
+    if (hdrVerEl) hdrVerEl.textContent = `v${curVer} · คิดปุ๊บ คลิปปั๊บ 🔄`;
   }
 
   $('#btnSaveSettings')?.addEventListener('click', async () => {
@@ -2271,7 +2276,7 @@ function formatReelsCaption({ caption = '', affiliateUrl = '', hashtags = '' } =
   async function checkExtensionUpdate(silent = false) {
     const btn = $('#btnCheckExtUpdate');
     const resultBox = $('#extUpdateResult');
-    const currentVer = chrome.runtime.getManifest()?.version || '1.2.8';
+    const currentVer = chrome.runtime.getManifest()?.version || '1.3.6';
     const curVerEl = $('#extCurrentVer');
     if (curVerEl) curVerEl.textContent = `v${currentVer}`;
 
@@ -2295,7 +2300,7 @@ function formatReelsCaption({ caption = '', affiliateUrl = '', hashtags = '' } =
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const info = await res.json();
 
-      const remoteVer = info.version || '1.2.8';
+      const remoteVer = info.version || '1.3.6';
       const hasNew = compareVersions(remoteVer, currentVer) > 0;
 
       if (hasNew) {
@@ -2314,7 +2319,7 @@ function formatReelsCaption({ caption = '', affiliateUrl = '', hashtags = '' } =
             </div>
             <div style="font-size:11px; color:var(--text-secondary); white-space:pre-line; margin-bottom:10px; line-height:1.5;">${info.notes || 'มีการอัปเดตฟีเจอร์และปรับปรุงประสิทธิภาพ'}</div>
             <div style="display:flex; flex-direction:column; gap:6px;">
-              <a href="${info.downloadUrl || 'https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.2.8.zip'}" target="_blank" class="btn btn-primary btn-sm" style="display:inline-flex; align-items:center; justify-content:center; gap:6px; text-decoration:none; padding:8px 14px; font-size:12px; font-weight:700;">📥 ดาวน์โหลดอัปเดต v${remoteVer} (.zip)</a>
+              <a href="${info.downloadUrl || 'https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.3.6.zip'}" target="_blank" class="btn btn-primary btn-sm" style="display:inline-flex; align-items:center; justify-content:center; gap:6px; text-decoration:none; padding:8px 14px; font-size:12px; font-weight:700;">📥 ดาวน์โหลดอัปเดต v${remoteVer} (.zip)</a>
               <div style="font-size:10px; color:var(--text-muted); line-height:1.4;">💡 วิธีอัปเดต: โหลดไฟล์ zip → แตกไฟล์ทับโฟลเดอร์เดิม → กดปุ่ม 🔄 รีโหลดในหน้ารวม Extension (chrome://extensions)</div>
             </div>
           `;
@@ -3600,16 +3605,17 @@ const selectProduct = (p) => { window.dispatchEvent(new CustomEvent('phimbot-sel
 
   // Direct injection into Google Flow tabs (PostMessage + Clipboard + DOM inputs + SYNC MATRIX trigger)
   async function sendDataToFlowTool(injectPayload) {
-    const DEFAULT_FLOW_TOOL_URL = 'https://flow.google.com/project/6e488c48-d736-4586-9466-e3ad189813e7/tool/4365c4fb-023d-40be-82e6-8b4d0d080c4c?mode=APP';
+    const DEFAULT_FLOW_TOOL_URL = 'https://flow.google.com/shared/tool/9e80057a-5cea-4b08-99d4-a9bfea111099';
     let allTabs = await chrome.tabs.query({});
     let tabs = allTabs.filter((t) => t.url && (t.url.includes('flow.google.com') || t.url.includes('labs.google')));
 
-    const existingToolTab = tabs.find((t) => t.url && t.url.includes('/tool/'));
-    if (existingToolTab?.url) {
+    const existingToolTab = tabs.find((t) => t.url && t.url.includes('/tool/') && !t.url.includes('4365c4fb-023d-40be-82e6-8b4d0d080c4c'));
+    if (existingToolTab?.url && existingToolTab.url.includes('/project/')) {
       try { await chrome.storage.local.set({ phimbot_flow_tool_url: existingToolTab.url }); } catch (_) {}
-    } else {
+    } else if (!tabs.some((t) => t.url && t.url.includes('/tool/') && !t.url.includes('4365c4fb-023d-40be-82e6-8b4d0d080c4c'))) {
       const stFlow = await chrome.storage.local.get(['phimbot_flow_tool_url']).catch(() => ({}));
-      const targetUrl = stFlow?.phimbot_flow_tool_url || DEFAULT_FLOW_TOOL_URL;
+      const savedUrl = String(stFlow?.phimbot_flow_tool_url || '');
+      const targetUrl = (savedUrl && !savedUrl.includes('4365c4fb-023d-40be-82e6-8b4d0d080c4c')) ? savedUrl : DEFAULT_FLOW_TOOL_URL;
       if (tabs.length > 0) {
         await chrome.tabs.update(tabs[0].id, { url: targetUrl });
         // Close duplicate plain flow.google.com home tabs if more than 1
@@ -3627,12 +3633,22 @@ const selectProduct = (p) => { window.dispatchEvent(new CustomEvent('phimbot-sel
         tabs = allTabs.filter((t) => t.url && (t.url.includes('flow.google.com') || t.url.includes('labs.google')));
         if (tabs.some((t) => t.status === 'complete' && t.url?.includes('/tool/'))) break;
       }
-      await new Promise((r) => setTimeout(r, 2500));
+      await new Promise((r) => setTimeout(r, 1500));
     }
 
     if (!tabs || tabs.length === 0) {
       return { success: false, reason: 'no_tabs' };
     }
+
+    // Ensure shared tool ("Try in a project" -> select project -> "Open" -> "Done") is entered and app iframe is mounted
+    try {
+      const targetTab = tabs.find((t) => t.url && t.url.includes('/tool/')) || tabs[0];
+      if (targetTab?.id) {
+        await sendMsg('PHIMBOT_ENSURE_FLOW_TOOL_READY', { tabId: targetTab.id });
+        allTabs = await chrome.tabs.query({});
+        tabs = allTabs.filter((t) => t.url && (t.url.includes('flow.google.com') || t.url.includes('labs.google')));
+      }
+    } catch (_) {}
 
     // 0. Update Clipboard with the EXACT payload and root-level counts
     const s = injectPayload.settings || {};
@@ -3686,10 +3702,11 @@ const selectProduct = (p) => { window.dispatchEvent(new CustomEvent('phimbot-sel
     let lastResult = null;
     for (const tab of tabs) {
       try {
-        const results = await chrome.scripting.executeScript({
-          target: { tabId: tab.id, allFrames: true },
-          world: 'MAIN',
-          func: (payloadData, clipObj, clipStr) => {
+        const results = await Promise.race([
+          chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            world: 'MAIN',
+            func: (payloadData, clipObj, clipStr) => {
             let foundElement = false;
 
             // Expose on window for direct access by Tool scripts
@@ -3860,7 +3877,9 @@ const selectProduct = (p) => { window.dispatchEvent(new CustomEvent('phimbot-sel
             };
           },
           args: [injectPayload, clipboardObj, clipText]
-        });
+          }),
+          new Promise((r) => setTimeout(() => r([]), 5000))
+        ]);
 
         if (results && results.length > 0) {
           const valid = results.find((r) => r.result?.foundElement) || results.find((r) => r.result?.state && r.result.state !== 'idle');
@@ -4137,33 +4156,48 @@ const selectProduct = (p) => { window.dispatchEvent(new CustomEvent('phimbot-sel
   }
 
   // 1) Selected Product Card sync button
-  $('#btnSyncSelectedToFlow')?.addEventListener('click', () => {
-    if (selectedProduct) {
-      syncToAiSalerPro(selectedProduct);
-    } else if (selectedProducts && selectedProducts.length) {
-      syncToAiSalerPro(selectedProducts);
+  $('#btnSyncSelectedToFlow')?.addEventListener('click', async () => {
+    const selProd = typeof selectedProduct !== 'undefined' ? selectedProduct : window.__phimbotSelectedProduct;
+    const selProds = typeof selectedProducts !== 'undefined' ? selectedProducts : window.__phimbotSelectedProducts;
+    if (selProd) {
+      syncToAiSalerPro(selProd);
+    } else if (selProds && selProds.length) {
+      syncToAiSalerPro(selProds);
+    } else if (showcaseProducts && showcaseProducts.length) {
+      syncToAiSalerPro(showcaseProducts[0]);
     } else {
-      showToast('⚠️ กรุณาเลือกสินค้าก่อนซิงค์');
+      const st = await chrome.storage.local.get(['phimbot_products']).catch(() => ({}));
+      if (st?.phimbot_products?.length) {
+        syncToAiSalerPro(st.phimbot_products[0]);
+      } else {
+        showToast('⚠️ กรุณาเลือกสินค้าก่อนซิงค์');
+      }
     }
   });
 
   // 2) Tab Products "Sync All" button
-  $('#btnSyncAllToFlow')?.addEventListener('click', () => {
+  $('#btnSyncAllToFlow')?.addEventListener('click', async () => {
     if (showcaseProducts && showcaseProducts.length) {
       syncToAiSalerPro(showcaseProducts);
     } else {
-      showToast('⚠️ ไม่มีสินค้าในรายการ กรุณาดึงสินค้าจาก TikTok ก่อน');
+      const st = await chrome.storage.local.get(['phimbot_products']).catch(() => ({}));
+      if (st?.phimbot_products?.length) {
+        syncToAiSalerPro(st.phimbot_products);
+      } else {
+        showToast('⚠️ ไม่มีสินค้าในรายการ กรุณาดึงสินค้าจาก TikTok ก่อน');
+      }
     }
   });
 
   // 3) Tab Shopee sync button
   $('#btnShopeeSyncFlow')?.addEventListener('click', () => {
-    if (currentShopeeProduct) {
+    const curShopee = typeof currentShopeeProduct !== 'undefined' ? currentShopeeProduct : window.__phimbotCurrentShopeeProduct;
+    if (curShopee) {
       syncToAiSalerPro({
-        name: currentShopeeProduct.title || currentShopeeProduct.name || 'Shopee Product',
-        productId: currentShopeeProduct.offerId || currentShopeeProduct.itemId || currentShopeeProduct.productId || 'SHOPEE',
-        keywords: currentShopeeProduct.keywords || (currentShopeeProduct.title ? currentShopeeProduct.title.split(' ').slice(0, 5).join(', ') : ''),
-        images: currentShopeeProduct.images || (currentShopeeProduct.imageUrl ? [currentShopeeProduct.imageUrl] : [])
+        name: curShopee.title || curShopee.name || 'Shopee Product',
+        productId: curShopee.offerId || curShopee.itemId || curShopee.productId || 'SHOPEE',
+        keywords: curShopee.keywords || (curShopee.title ? curShopee.title.split(' ').slice(0, 5).join(', ') : ''),
+        images: curShopee.images || (curShopee.imageUrl ? [curShopee.imageUrl] : [])
       });
     } else {
       showToast('⚠️ กรุณาดึงข้อมูลสินค้า Shopee ก่อนซิงค์');
@@ -4202,32 +4236,22 @@ const selectProduct = (p) => { window.dispatchEvent(new CustomEvent('phimbot-sel
     });
   }
 
-  btnAddFactoryProduct?.addEventListener('click', () => {
-    if (showcaseProducts && showcaseProducts.length) {
-      factoryProducts = [...showcaseProducts];
-      window.__phimbotFactoryProducts = factoryProducts;
-      renderFactoryQueue();
-      showToast(`เพิ่ม ${showcaseProducts.length} รายการเข้าคิวโรงงานแล้ว`);
-    } else if (selectedProduct) {
-      factoryProducts.push(selectedProduct);
-      window.__phimbotFactoryProducts = factoryProducts;
-      renderFactoryQueue();
-      showToast('เพิ่มสินค้าเข้าคิวโรงงานแล้ว');
-    } else {
-      openProductModal();
-    }
-  });
-
-  $('#btnFactorySyncFlow')?.addEventListener('click', () => {
+  $('#btnFactorySyncFlow')?.addEventListener('click', async () => {
     const list = getFactoryProducts();
+    const selProd = typeof selectedProduct !== 'undefined' ? selectedProduct : window.__phimbotSelectedProduct;
     if (list && list.length) {
       syncToAiSalerPro(list);
-    } else if (selectedProduct) {
-      syncToAiSalerPro(selectedProduct);
+    } else if (selProd) {
+      syncToAiSalerPro(selProd);
     } else if (showcaseProducts && showcaseProducts.length) {
       syncToAiSalerPro(showcaseProducts);
     } else {
-      showToast('⚠️ กรุณาเพิ่มสินค้าเข้าคิวโรงงานก่อนซิงค์');
+      const st = await chrome.storage.local.get(['phimbot_products']).catch(() => ({}));
+      if (st?.phimbot_products?.length) {
+        syncToAiSalerPro(st.phimbot_products);
+      } else {
+        showToast('⚠️ กรุณาเพิ่มสินค้าเข้าคิวโรงงานก่อนซิงค์');
+      }
     }
   });
 
@@ -4303,15 +4327,21 @@ const selectProduct = (p) => { window.dispatchEvent(new CustomEvent('phimbot-sel
   // Define buildFlowMatrixPayload helper for Video Factory & One-Click Auto-Pilot
   async function buildFlowMatrixPayload(customItems) {
     let list = customItems;
+    const selProd = typeof selectedProduct !== 'undefined' ? selectedProduct : window.__phimbotSelectedProduct;
     if (!list || !list.length) {
       if (typeof getFactoryProducts === 'function' && getFactoryProducts()?.length) {
         list = getFactoryProducts();
       } else if (Array.isArray(window.__phimbotFactoryProducts) && window.__phimbotFactoryProducts.length) {
         list = window.__phimbotFactoryProducts;
-      } else if (selectedProduct) {
-        list = [selectedProduct];
+      } else if (selProd) {
+        list = [selProd];
       } else if (showcaseProducts && showcaseProducts.length) {
-        list = showcaseProducts;
+        list = showcaseProducts.slice(0, 1);
+      } else {
+        const st = await chrome.storage.local.get(['phimbot_products']).catch(() => ({}));
+        if (st?.phimbot_products?.length) {
+          list = st.phimbot_products.slice(0, 1);
+        }
       }
     }
     if (!list || !list.length) return null;
@@ -4336,7 +4366,17 @@ const selectProduct = (p) => { window.dispatchEvent(new CustomEvent('phimbot-sel
       try { chrome.runtime.reload(); } catch (_) {}
     }, 300);
   }
+  let _spAgBridgeEnabled = false;
+  chrome.storage.local.get(['ag_bridge_enabled'], (res) => {
+    _spAgBridgeEnabled = Boolean(res?.ag_bridge_enabled);
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.ag_bridge_enabled) {
+      _spAgBridgeEnabled = Boolean(changes.ag_bridge_enabled.newValue);
+    }
+  });
   setInterval(() => {
+    if (!_spAgBridgeEnabled) return;
     try {
       chrome.runtime.sendMessage({ type: 'ANTIGRAVITY_BRIDGE_WAKE' }, () => {
         void chrome.runtime.lastError;

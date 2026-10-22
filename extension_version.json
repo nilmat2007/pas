@@ -1,8 +1,8 @@
-{
+﻿{
   "name": "PUP PAP AI",
-  "version": "1.3.5",
-  "versionCode": 10305,
-  "downloadUrl": "https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.3.5.zip",
-  "notes": "• แก้ปัญหาวิดีโอจาก Google Flow Tool ไม่เข้าคลังหรือส่งต่อตามสเต็บ: อัปเกรด Video Interceptor v2 ดักจับวิดีโอรวมฉาก (Flow.download + FileReader + FFmpeg out.mp4) พร้อมระบบดึงเข้าคลังวีดีโออัตโนมัติทุก 5 วินาที และระบบ Scene Fallback ป้องกันคลิปหาย\n• ทำงานต่อสเต็ป 4 อัตโนมัติ 100% ตามเมนู 'หลังผลิตเสร็จ ให้ทำอะไร?' (ตัดป๊อปอัป confirm ขัดจังหวะออก) พร้อมส่งรหัสสินค้าสะอาดเพื่อปักตะกร้า TikTok Shop / Shopee / Reels / Cloud Sync อัตโนมัติ\n• ปรับลดการส่งรูปสินค้าเข้า Google Flow Tool เหลือเฉพาะ 2 รูปหลักแรก + ดาวน์โหลดแบบขนาน (Promise.all)\n• แสดงปุ่มเลือกเพศตัวละคร/เสียงพากย์ (👩 หญิง (ค่ะ) / 👨 ชาย (ครับ)) ในทุกโหมดถ่ายทำ พร้อม AI วิเคราะห์เพศอัตโนมัติ",
-  "publishedAt": "2026-10-17"
+  "version": "1.3.6",
+  "versionCode": 10306,
+  "downloadUrl": "https://github.com/nilmat2007/pas/raw/main/PUP_PAP_AI_v1.3.6.zip",
+  "notes": "• รองรับลิงก์แชร์ Google Flow (Ai SALER PRO) อัตโนมัติ 100%: กด Try in a project → เลือกโปรเจ็กต์ → Open → รอคอมไพล์และพับแผงโค้ดให้อัตโนมัติก่อนซิงค์สินค้า\n• แก้ไขการใส่แคปชั่น 3 ส่วนบน Facebook Reels (Lexical Editor) ให้ข้อความ + พิกัดสินค้า + แฮชแท็กเข้าครบ 100% และเลือกปุ่มโพสต์/กำหนดเวลาได้แม่นยำ\n• แก้ไข TikTok Studio ให้สลับไปแท็บ 'นำเสนอสินค้า (Showcase)' อัตโนมัติเมื่อปักตะกร้า และป้องกันแฮชแท็ก ## ซ้ำ\n• อัปเกรดโมเดลเริ่มต้นเป็น gemini-2.5-flash พร้อมระบบตรวจจับคีย์ Gemini / OpenRouter อัตโนมัติ",
+  "publishedAt": "2026-10-22"
 }
